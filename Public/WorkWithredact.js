@@ -105,10 +105,13 @@ svg.addEventListener('drop', (e) => {
     }
 });
 
-function createNode(type, x, y) {
+function createNode(type, x, y, existingBlockId) {
     const ns = "http://www.w3.org/2000/svg";
     const g = document.createElementNS(ns, "g");
     
+    // Присваиваем data-id сразу: либо переданный (удалённый блок), либо новый
+    const blockId = existingBlockId || ('block_' + Math.random().toString(36).substr(2, 9));
+    g.setAttribute("data-id", blockId);
     g.setAttribute("transform", `translate(${x}, ${y})`);
     g.setAttribute("data-type", type);
     
@@ -171,6 +174,10 @@ function createNode(type, x, y) {
         makeSelectable(g);
         addResizeHandles(g);
         updateHandlesPosition(g, -50, -25, 100, 50);
+        // Emit только если это локальное создание (не remote)
+        if (!existingBlockId) {
+            emitEvent('block:create', { blockId: g.getAttribute('data-id'), blockType: type, x, y });
+        }
         return;
     }
     else if (type === 'connector') {
@@ -213,7 +220,10 @@ function createNode(type, x, y) {
     }
     
     mainLayer.appendChild(g);
-    emitEvent('block:create', { blockId: g.getAttribute('data-id'), blockType: type, x, y });
+    // Emit только если это локальное создание (не remote)
+    if (!existingBlockId) {
+        emitEvent('block:create', { blockId: g.getAttribute('data-id'), blockType: type, x, y });
+    }
     makeTextEditable(g, type);
     makeDraggable(g);
     makeSelectable(g);
@@ -276,6 +286,7 @@ function makeTextEditable(group, type) {
     // Добавляем возможность редактирования по двойному клику
     group.addEventListener('dblclick', (e) => {
         e.stopPropagation();
+        if (!canEdit()) return; // viewer не может редактировать текст
         editText(group, text);
     });
 }
@@ -346,6 +357,7 @@ function makeDraggable(group) {
     group.addEventListener('mousedown', (e) => {
         // Не перемещаем при двойном клике или если кликнули на текст
        if (e.target.tagName === 'text' || e.ctrlKey || e.metaKey) return;
+        if (!canEdit()) return; // viewer не может двигать блоки
         
         e.stopPropagation();
         isDragging = true;
@@ -524,6 +536,7 @@ function makeSelectable(group) {
 // Обработчик клавиши Delete
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Delete' && selectedBlocks.size > 0) {
+        if (!canEdit()) return;
         e.preventDefault();
         deleteSelectedBlocks();
     }
@@ -581,6 +594,7 @@ function addResizeHandles(group) {
         
         rect.addEventListener('mousedown', (e) => {
             e.stopPropagation();
+            if (!canEdit()) return; // viewer не может ресайзить
             startResize(group, handle.dir, e);
         });
         
@@ -1119,8 +1133,8 @@ function addPortsToBlock(group, type) {
 
 // Модифицируем createNode — добавляем вызов addPortsToBlock
 const _createNode = createNode;
-createNode = function(type, x, y) {
-    _createNode(type, x, y);
+createNode = function(type, x, y, existingBlockId) {
+    _createNode(type, x, y, existingBlockId);
     const allGroups = mainLayer.querySelectorAll('g[data-type]');
     const lastGroup = allGroups[allGroups.length - 1];
     addPortsToBlock(lastGroup, type);
@@ -1727,6 +1741,20 @@ if (roomId) {
         }
     });
 
+    // Запрос снапшота — только владелец отвечает
+    socket.on('room:request_snapshot', ({ requesterId }) => {
+        if (myRole !== 'owner') return;
+        const snapshot = getSvgContent();
+        socket.emit('room:send_snapshot', { requesterId, snapshot });
+    });
+
+    // Получаем снапшот холста от владельца
+    socket.on('room:snapshot', ({ snapshot }) => {
+        if (!snapshot) return;
+        // Очищаем текущий холст и восстанавливаем состояние
+        restoreFromContent(snapshot);
+    });
+
     // Кто-то вышел
     socket.on('room:user_left', ({ userId }) => {
         const card = document.getElementById('hotbar-user-' + userId);
@@ -1791,10 +1819,7 @@ window.addEventListener('load', () => {
 function applyRemoteEvent({ type, payload }) {
     switch (type) {
         case 'block:create':
-            createNode(payload.blockType, payload.x, payload.y);
-            const allGroups = mainLayer.querySelectorAll('g[data-type]');
-            const newBlock = allGroups[allGroups.length - 1];
-            newBlock.setAttribute('data-id', payload.blockId);
+            createNode(payload.blockType, payload.x, payload.y, payload.blockId);
             break;
 
         case 'block:move': {
@@ -1819,6 +1844,22 @@ function applyRemoteEvent({ type, payload }) {
                 shape.setAttribute('x', payload.x); shape.setAttribute('y', payload.y);
                 shape.setAttribute('width', payload.width); shape.setAttribute('height', payload.height);
                 if (type === 'terminal') shape.setAttribute('rx', payload.rx);
+                if (type === 'predefined') {
+                    const lines = block.querySelectorAll('line');
+                    if (lines.length === 2) {
+                        const nx = parseFloat(payload.x), nw = parseFloat(payload.width), ny = parseFloat(payload.y), nh = parseFloat(payload.height);
+                        lines[0].setAttribute('x1', nx + nw * 0.1); lines[0].setAttribute('x2', nx + nw * 0.1);
+                        lines[0].setAttribute('y1', ny); lines[0].setAttribute('y2', ny + nh);
+                        lines[1].setAttribute('x1', nx + nw * 0.9); lines[1].setAttribute('x2', nx + nw * 0.9);
+                        lines[1].setAttribute('y1', ny); lines[1].setAttribute('y2', ny + nh);
+                    }
+                }
+            }
+            // Обновляем позицию текста
+            const text = block.querySelector('text');
+            if (text && payload.x != null && payload.width != null) {
+                text.setAttribute('x', parseFloat(payload.x) + parseFloat(payload.width) / 2);
+                text.setAttribute('y', parseFloat(payload.y) + parseFloat(payload.height) / 2 + 5);
             }
             updateHandlesPosition(block, payload.hx, payload.hy, payload.hw, payload.hh);
             updatePortsPosition(block);

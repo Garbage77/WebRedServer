@@ -55,6 +55,22 @@ io.on('connection', (socket) => {
 
         // Остальным — что кто-то подключился
         socket.to(roomId).emit('room:user_joined', { userId, username, role });
+
+        // Если новый участник не владелец — просим владельца прислать снапшот холста
+        if (!isOwner) {
+            // Находим сокет владельца
+            for (const [sid, user] of room.users) {
+                if (user.userId === room.ownerId) {
+                    io.to(sid).emit('room:request_snapshot', { requesterId: socket.id });
+                    break;
+                }
+            }
+        }
+    });
+
+    // Владелец присылает снапшот — пересылаем конкретному участнику
+    socket.on('room:send_snapshot', ({ requesterId, snapshot }) => {
+        io.to(requesterId).emit('room:snapshot', { snapshot });
     });
 
     // Владелец меняет роль
