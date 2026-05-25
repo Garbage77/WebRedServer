@@ -18,9 +18,12 @@ html, body {
     width: 100%;
 }
 
+:root {
+    --sidebar-width: 280px;
+}
 
 .sidebar {
-    width: 280px;
+    width: var(--sidebar-width);
     height: 100%; 
     background-color: #fcfcfd;
     border-right: 1px solid #e0e0e0;
@@ -429,7 +432,7 @@ html, body {
 .hotbar {
     position: fixed;
     bottom: 0;
-    left: 28vh; /* ширина сайдбара */
+    left: calc(var(--sidebar-width) - 25px); /* ширина сайдбара */
     right: 0;
     height: 56px;
     border-top: 1px solid #444;
