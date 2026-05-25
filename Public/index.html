@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход и Регистрация</title>
+    <link rel="stylesheet" href="indexstyle.css">
+</head>
+
+<body class="auth-page">
+    
+    <div class="auth-container">
+        <h2 id="form-title">Вход</h2>
+        
+        
+        <form id="auth-form" class="auth-form">
+            
+            
+            <div class="input-group">
+                <input type="text" placeholder="Логин" required>
+            </div>
+
+            <div class="input-group">
+                <input type="password" placeholder="Пароль" required>
+            </div>
+
+           
+            <div id="extra-fields">
+                <div class="input-group">
+                    <input type="password" placeholder="Повторите пароль" id="repeat-password-field">
+                </div>
+                <div class="input-group">
+                    <input type="email" placeholder="Электронная почта" id="email-field">
+                </div>
+                
+            </div>
+            <button type="submit" class="submit-btn">Продолжить</button>
+            <button id="toggle-btn" class="tab-btn" type="button">Зарегистрироваться</button>
+        </form>
+        
+        <a href="MainMenu.html" class="back-link">← На главную</a>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+                
+            const formTitle = document.getElementById('form-title');
+            const extraFields = document.getElementById('extra-fields');
+            const toggleBtn = document.getElementById('toggle-btn');
+            const submitBtn = document.querySelector('.submit-btn');
+            const authForm = document.getElementById('auth-form');
+            
+            // Твои настройки анимации — не трогал
+            extraFields.style.maxHeight = '0';
+            extraFields.style.opacity = '0';
+            extraFields.style.overflow = 'hidden';
+            extraFields.style.transition = 'max-height 0.8s ease-in-out, opacity 0.6s ease-in-out';  
+
+            let isLogin = true;
+            
+            // Переключение режимов
+            toggleBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                
+                if (isLogin) {
+                    formTitle.textContent = 'Регистрация';
+                    toggleBtn.textContent = 'Войти';
+                    submitBtn.textContent = 'Зарегистрироваться';
+                    extraFields.style.maxHeight = '200px';
+                    extraFields.style.opacity = '1';
+                    extraFields.style.marginTop = '0';
+                    isLogin = false;
+                } else {
+                    formTitle.textContent = 'Вход';
+                    toggleBtn.textContent = 'Зарегистрироваться';
+                    submitBtn.textContent = 'Продолжить';
+                    extraFields.style.maxHeight = '0';
+                    extraFields.style.opacity = '0';
+                    extraFields.style.marginTop = '0';
+                    isLogin = true;
+                }
+            });
+            
+            // Обработка отправки формы
+            authForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const inputs = authForm.querySelectorAll('input');
+                const login = inputs[0].value.trim();
+                const password = inputs[1].value.trim();
+
+                if (!login || !password) {
+                    alert('Заполните все обязательные поля');
+                    return;
+                }
+
+                if (isLogin) {
+                    // Вход
+                    const res = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ login, password })
+                    });
+                    const data = await res.json();
+
+                    if (!res.ok) { alert(data.error); return; }
+
+                    localStorage.setItem('username', data.user.login);
+                    localStorage.setItem('useremail', data.user.email);
+                    localStorage.setItem('userid', data.user.id);
+                    window.location.href = '/MainMenu.html';
+
+                } else {
+                    // Регистрация
+                    const repeatPassword = inputs[2].value.trim();
+                    const email = inputs[3].value.trim();
+
+                    if (password !== repeatPassword) { alert('Пароли не совпадают'); return; }
+
+                    const res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ login, email, password })
+                    });
+                    const data = await res.json();
+
+                    if (!res.ok) { alert(data.error); return; }
+
+                    localStorage.setItem('username', data.user.login);
+                    localStorage.setItem('useremail', data.user.email);
+                    window.location.href = '/MainMenu.html';
+                }
+                });
+            
+        });
+        </script>
+    </body>
+</html>

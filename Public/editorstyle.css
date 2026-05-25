@@ -1,0 +1,566 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Фиксируем высоту всего приложения на 100% экрана */
+html, body {
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+}
+
+.app-container {
+    display: flex;
+    height: 100%; 
+    width: 100%;
+}
+
+
+.sidebar {
+    width: 280px;
+    height: 100%; 
+    background-color: #fcfcfd;
+    border-right: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    z-index: 20;
+}
+
+.sidebar-title {
+    padding: 20px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a1a;
+    border-bottom: 1px solid #eee;
+}
+
+.element-list {
+    padding: 15px;
+    display: flex;
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 15px;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Карточка элемента */
+.draggable-item {
+    display: flex;
+    align-items: center; /* Выравнивание контента по вертикали */
+    padding: 12px;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 0px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    user-select: none;
+    transition: 
+        transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), 
+        box-shadow 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.draggable-item:hover {
+    transform: scale(1.03) translateX(5px); /* Легкий вылет вправо */
+    border-color: #000000;
+    background-color: #ffffff;
+    box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.1), 0 4px 6px -2px rgba(59, 130, 246, 0.05);
+    cursor: pointer;
+}
+
+.draggable-item:hover .shape {
+    border-color: #020202;
+    box-shadow: 0 0 8px rgba(21, 21, 22, 0.3);
+    transition: all 0.2s ease;
+}
+
+/* Анимация конкретно для ромба (чтобы не сломать поворот) */
+.draggable-item:hover .decision {
+    transform: rotate(45deg) scale(1.1);
+}
+
+/* Плавный акцент на тексте */
+.draggable-item:hover .label {
+    color: #000000;
+}
+
+.draggable-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 4px;
+    background-color: #404347;
+    transform: scaleY(0);
+    transition: transform 0.2s ease;
+}
+
+.draggable-item:hover::before {
+    transform: scaleY(1);
+}
+
+/* Контейнер для фигур*/
+.shape-wrapper {
+    width: 50px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.label {
+    margin-left: 15px;
+    font-size: 14px;
+    color: #444;
+    font-weight: 500;
+}
+
+/* Стилизация фигур */
+.shape {
+    border: 2px solid #333;
+    background: #fff;
+}
+
+.terminal {
+    width: 40px;
+    height: 22px;
+    border-radius: 15px;
+}
+
+.process {
+    width: 40px;
+    height: 25px;
+}
+
+.decision {
+    width: 24px;
+    height: 24px;
+    transform: rotate(45deg);
+    flex-shrink: 0;
+}
+
+.data {
+    width: 40px;
+    height: 25px;
+    transform: skewX(-20deg);
+}
+
+/* Рабочая область */
+.canvas-area {
+    flex-grow: 1;
+    height: 100%;
+    overflow: auto;
+    background-color: #f8fafc;
+    cursor: default;
+}
+
+#canvas-svg {
+    display: block;
+    cursor: cell;
+    overflow: visible;
+}
+
+#canvas-svg:active {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.canvas-hint {
+    position: absolute;
+    top: 50px;
+    left: 50px;
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+.sidebar-footer {
+    padding: 15px;
+    border-top: 1px solid #eee;
+    background: #fff;
+}
+
+.btn-exit {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 0px;
+    color: #ef4444; /* Красный цвет для акцента на выходе */
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-exit:hover {
+    background-color: #fef2f2;
+    border-color: #fca5a5;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.btn-exit:active {
+    transform: translateY(0);
+}
+
+.exit-icon {
+    width: 18px;
+    height: 18px;
+}
+
+@media (min-width: 2560px) {
+  html {
+    zoom: 3; /* Увеличит весь сайт в 1.5 раза */
+  }
+}
+
+/* Предопределенный процесс */
+.predefined {
+    width: 40px;
+    height: 25px;
+    background: white;
+    border: 2px solid #333;
+    position: relative;
+}
+.predefined::before,
+.predefined::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 2px;
+    background: #333;
+}
+.predefined::before {
+    left: 8px;
+}
+.predefined::after {
+    right: 8px;
+}
+
+/* Соединитель */
+.connector {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid #333;
+}
+
+.save-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+}
+
+.save-modal {
+  background: #fff;
+  padding: 30px;
+  max-width: 300px;
+  width: 100%;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+.save-modal h3 {
+  margin-top: 0;
+  font-size: 18px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+
+.save-modal-text {
+  border: 1px solid #333;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  text-align: left;
+  color: #222;
+  line-height: 1.4;
+}
+
+.save-modal input {
+  width: 100%;
+  padding: 14px 10px;
+  margin-bottom: 16px;
+  border: 1px solid #333;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  box-sizing: border-box;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.save-modal input:focus {
+  background: #333;
+  color: white;
+}
+
+.save-modal-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.save-modal button {
+  margin-bottom: 12px;
+  width: 100%;
+  background: transparent;
+  color: #333;
+  padding: 10px 20px;
+  border: 1px solid #333;
+  font-size: 14px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.save-modal button:hover {
+  background: #333;
+  color: #fff;
+}
+
+.session-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 40px;
+  background: #1a1a1a;
+  color: white;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  z-index: 1000;
+  font-size: 13px;
+}
+
+.session-label { color: #888; }
+
+.session-id {
+  font-family: monospace;
+  color: #3b82f6;
+  letter-spacing: 1px;
+}
+
+.session-copy-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid #444;
+  color: #ccc;
+  font-size: 12px;
+  cursor: pointer;
+  transition: 0.2s;
+  width: auto;
+  margin-bottom: 0;
+  letter-spacing: 0;
+}
+
+.session-copy-btn:hover {
+  background: #333;
+  color: white;
+}
+
+.session-users {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.session-user-badge {
+  background: #2d2d2d;
+  border: 1px solid #444;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #ccc;
+}
+
+/* Сдвигаем приложение вниз когда бар активен */
+.app-container.has-session-bar {
+  margin-top: 40px;
+  height: calc(100vh - 40px);
+}
+
+.sidebar-session {
+    padding: 10px 15px;
+    border-top: 1px solid #eee;
+}
+
+.btn-session {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    color: #444;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-session:hover {
+    border-color: #444;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+
+.hotbar {
+    position: fixed;
+    bottom: 0;
+    left: 28vh; /* ширина сайдбара */
+    right: 0;
+    height: 56px;
+    border-top: 1px solid #444;
+    z-index: 500;
+    display: flex;
+    align-items: center;
+}
+
+.hotbar-inner {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0 20px;
+    gap: 16px;
+}
+
+.hotbar-session-id {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    border-right: 1px solid #2d2d2d;
+    padding-right: 16px;
+}
+
+.hotbar-label {
+    font-size: 12px;
+    color: #555;
+}
+
+.hotbar-code {
+    font-family: monospace;
+    font-size: 13px;
+    color: #444;
+    letter-spacing: 1px;
+}
+
+.hotbar-copy-btn {
+    padding: 3px 8px;
+    background: transparent;
+    border: 1px solid #333;
+    color: #888;
+    font-size: 11px;
+    cursor: pointer;
+    transition: 0.2s;
+    width: auto;
+    margin-bottom: 0;
+    letter-spacing: 0;
+}
+
+.hotbar-copy-btn:hover {
+    background: #2d2d2d;
+    color: #a1a1a1;
+}
+
+.hotbar-users {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+}
+
+.hotbar-user {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #333;
+    padding: 3px 8px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    height: 24px;
+    box-sizing: border-box;
+}
+
+.hotbar-user-name {
+    font-size: 11px;
+    color: #888;
+}
+
+.hotbar-role-select {
+    border: 1px solid #444;
+    color: #aaa;
+    font-size: 11px;
+    padding: 0 2px;
+    cursor: pointer;
+    outline: none;
+    width: auto;
+    margin-bottom: 0;
+    height: 18px;
+    background: transparent;
+}
+
+.hotbar-role-badge {
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    line-height: 1;
+}
+
+.hotbar-copy-btn {
+    padding: 3px 8px;
+    background: transparent;
+    border: 1px solid #333;
+    color: #888;
+    font-size: 11px;
+    cursor: pointer;
+    transition: 0.2s;
+    width: auto;
+    margin-bottom: 0;
+    letter-spacing: 0;
+    height: 24px;
+    box-sizing: border-box;
+    border-radius: 3px;
+}
+
+.hotbar-user-dot.owner   { background: #f59e0b; }
+.hotbar-user-dot.editor  { background: #10b981; }
+.hotbar-user-dot.viewer  { background: #6b7280; }
+
+
+
+.hotbar-role-select:hover {
+    border-color: #666;
+}
+
+
+.hotbar-role-badge.editor { background: #86fadb; color: #10b981; }
+.hotbar-role-badge.viewer { background: #6685af; color: #6b7280; }
+
+/* Сдвиг холста чтобы хотбар не перекрывал */
+.canvas-area {
+    padding-bottom: 56px;
+}

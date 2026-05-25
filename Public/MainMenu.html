@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Block_work</title>
+    <link rel="stylesheet" href="MainMenustyle.css">
+</head>
+
+<body>
+    <header>
+        <div class="logo">
+            Блок-схемы
+        </div>
+        <div class = "auth-section">
+            <a href="index.html">
+                <button class="auth-btn" id="loginBtn">
+                    Вход / Регистрация
+                </button>
+            </a>
+
+            <div class="user-menu" id="userMenu" style="display: none;">
+                <button class="user-btn" id="userBtn">
+                    <span id="userNameDisplay">Иван</span>
+                    <span class="arrow">▼</span>
+                </button>
+                <div class="account-dropdown" id="accountDropdown" style="display: none;">
+                    <div class="dropdown-header">
+                        <div class="dropdown-name" id="dropdownName">Иван Иванов</div>
+                        <div class="dropdown-email" id="dropdownEmail">ivan@mail.ru</div>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item logout-btn no-style" id="logoutBtn">
+                        Выйти
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    
+
+    <main>
+        <div class="title">
+            Онлайн редактор блок-схем от ShNiN
+        </div>
+        <div class="cards-grid" id="cards-grid">
+            <div class="cards-overlay" id="cardsOverlay">
+                <div class="overlay-content">
+                    <div class="overlay-text">Войдите или зарегистрируйтесь, чтобы создавать и редактировать блок-схемы</div>
+                </div>
+            </div>
+            <a href="editor.html" class ="card create-card">
+                <div class="plus">+</div>
+                Новая блок-схема
+            </a>
+            <a href="#" class="card create-card join-card" id="joinBtn">
+                <div class="icon-join">
+                    <div class="square s1"></div>
+                    <div class="square s2"></div>
+                </div>
+                Подключиться к сессии
+            </a>
+
+        </div>
+    </main>
+    
+    <footer>
+        <div class = bottom-links>
+            <a href>О нас</a>
+            <a href>Контакты</a>
+            <a href>Полезное</a>
+        </div>
+    </footer>
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <h3>Подключение</h3>
+            
+            <div class="text-block">
+                Введите ID сессии для совместного редактирования схемы.
+            </div>
+            
+            <input type="text" id="roomInput" placeholder="ID СЕССИИ" autofocus>
+            
+            <div class="modal-buttons">
+                <button id="confirmJoin">Войти</button>
+                <button id="closeModal" style="margin-bottom: 0;">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+
+
+    <script>
+
+        document.addEventListener('DOMContentLoaded', async function() {
+
+            // --- Модалка ---
+            const joinBtn = document.getElementById('joinBtn');
+            const modalOverlay = document.getElementById('modalOverlay');
+            const closeModal = document.getElementById('closeModal');
+            const confirmJoin = document.getElementById('confirmJoin');
+            const roomInput = document.getElementById('roomInput');
+
+            joinBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                modalOverlay.style.display = 'flex';
+                roomInput.focus();
+            });
+            closeModal.addEventListener('click', () => {
+                modalOverlay.style.display = 'none';
+                roomInput.value = '';
+            });
+            confirmJoin.addEventListener('click', () => {
+                const code = roomInput.value.trim();
+                if (code) window.location.href = `editor.html?room=${code}`;
+                else alert("Пожалуйста, введите код!");
+            });
+            modalOverlay.addEventListener('click', (e) => {
+                if (e.target === modalOverlay) closeModal.click();
+            });
+
+            // --- Авторизация ---
+            const loginBtn = document.getElementById('loginBtn');
+            const userMenu = document.getElementById('userMenu');
+            const userBtn = document.getElementById('userBtn');
+            const accountDropdown = document.getElementById('accountDropdown');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const cardsOverlay = document.getElementById('cardsOverlay');
+            const cardsGrid = document.getElementById('cards-grid');
+
+            const username = localStorage.getItem('username');
+            const useremail = localStorage.getItem('useremail');
+            const userid = localStorage.getItem('userid');
+
+            if (username) {
+                loginBtn.style.display = 'none';
+                userMenu.style.display = 'block';
+                cardsOverlay.classList.add('hidden');
+                document.getElementById('userNameDisplay').textContent = username;
+                document.getElementById('dropdownName').textContent = username;
+                document.getElementById('dropdownEmail').textContent = useremail || '';
+
+                // Загружаем карточки
+                loadFlowcharts(userid);
+            }
+
+            userBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const isOpen = accountDropdown.style.display === 'block';
+                accountDropdown.style.display = isOpen ? 'none' : 'block';
+                userBtn.classList.toggle('active', !isOpen);
+            });
+
+            logoutBtn.addEventListener('click', function() {
+                localStorage.removeItem('username');
+                localStorage.removeItem('useremail');
+                localStorage.removeItem('userid');
+                loginBtn.style.display = 'inline-block';
+                userMenu.style.display = 'none';
+                accountDropdown.style.display = 'none';
+                cardsOverlay.classList.remove('hidden');
+                clearFlowcharts();
+            });
+
+            document.addEventListener('click', function(e) {
+                if (!userMenu.contains(e.target) && !accountDropdown.contains(e.target)) {
+                    accountDropdown.style.display = 'none';
+                    userBtn.classList.remove('active');
+                }
+            });
+        });
+
+        // Загрузка карточек с сервера
+        async function loadFlowcharts(userId) {
+            try {
+                const res = await fetch(`/flowcharts/${userId}`);
+                const data = await res.json();
+
+                const grid = document.getElementById('cards-grid');
+                grid.querySelectorAll('.card-wrapper').forEach(c => c.remove());
+
+                if (data.flowcharts.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'card-wrapper';
+                    empty.innerHTML = `<div class="card" style="color:#aaa;text-align:center;padding:40px 16px;">Схем пока нет.<br>Создайте первую!</div>`;
+                    grid.appendChild(empty);
+                    return;
+                }
+
+                data.flowcharts.forEach(fc => {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'card-wrapper';
+                    wrapper.innerHTML = `
+                        <div class="menu" data-id="${fc.id}">⋮</div>
+                        <div class="card-menu-dropdown" id="dropdown-${fc.id}">
+                            <div class="card-menu-item rename-btn" data-id="${fc.id}" data-title="${fc.title}">Переименовать</div>
+                            <div class="card-menu-item danger delete-btn" data-id="${fc.id}">Удалить</div>
+                        </div>
+                        <div class="card" onclick="window.location.href='editor.html?id=${fc.id}'">
+                            <div class="preview">
+                                ${fc.preview
+                                    ? `<img src="${fc.preview}" style="width:100%;height:100%;object-fit:cover;">`
+                                    : ''}
+                            </div>
+                            <div class="card-title">${fc.title}</div>
+                            <div class="card-date">${formatDate(fc.updated_at)}</div>
+                        </div>
+                    `;
+                    grid.appendChild(wrapper);
+
+                    // Три точки — открыть меню
+                    const menuBtn = wrapper.querySelector('.menu');
+                    const dropdown = wrapper.querySelector('.card-menu-dropdown');
+
+                    menuBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        // Закрываем все другие
+                        document.querySelectorAll('.card-menu-dropdown.open').forEach(d => {
+                            if (d !== dropdown) d.classList.remove('open');
+                        });
+                        dropdown.classList.toggle('open');
+                    });
+
+                    // Переименовать
+                    wrapper.querySelector('.rename-btn').addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        dropdown.classList.remove('open');
+                        const newTitle = prompt('Новое название:', fc.title);
+                        if (!newTitle || newTitle.trim() === fc.title) return;
+
+                        await fetch(`/flowcharts/rename/${fc.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ title: newTitle.trim() })
+                        });
+                        loadFlowcharts(userId);
+                    });
+
+                    // Удалить
+                    wrapper.querySelector('.delete-btn').addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        dropdown.classList.remove('open');
+                        if (!confirm(`Удалить "${fc.title}"?`)) return;
+
+                        await fetch(`/flowcharts/${fc.id}`, { method: 'DELETE' });
+                        loadFlowcharts(userId);
+                    });
+                });
+
+                // Закрываем меню при клике в сторону
+                document.addEventListener('click', () => {
+                    document.querySelectorAll('.card-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+                });
+
+            } catch (e) {
+                console.error('Ошибка загрузки схем:', e);
+            }
+        }
+
+        function clearFlowcharts() {
+            const grid = document.getElementById('cards-grid');
+            grid.querySelectorAll('.card-wrapper').forEach(c => c.remove());
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = Math.floor((now - date) / 1000);
+
+            if (diff < 60) return 'Только что';
+            if (diff < 3600) return `${Math.floor(diff / 60)} мин. назад`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)} ч. назад`;
+            if (diff < 172800) return 'Вчера';
+            return date.toLocaleDateString('ru-RU');
+        }
+    </script>
+</body>

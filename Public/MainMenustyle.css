@@ -1,0 +1,514 @@
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f2f4f7;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background: white;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.logo {
+    font-weight: bold;
+    font-size: 20px;
+}
+
+.auth-btn {
+    padding: 8px 16px;
+    border: 1px solid #ccc;
+    background: white;
+    border-radius: 0px;
+    cursor: pointer;
+    border: 1px solid #333; 
+    transition: 0.2s;
+}
+
+.auth-btn:hover {
+    background: #f0f0f0;
+}
+
+main {
+    padding: 32px;
+    flex: 1 0 auto; 
+}
+
+.title {
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 24px;
+}
+
+.cards-grid {
+    display: grid;
+    flex-wrap: wrap;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    justify-content: center;
+}
+
+.card {
+    background: white;
+    border-radius: 0px;
+    padding: 16px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+    cursor: pointer;
+    transition: 0.2s; 
+}
+
+.card:hover {
+    transform: translateY(-3px);
+}
+
+.create-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border: 2px dashed #ccc;
+    color: #666;
+    flex: 1 1 300px;
+    max-width: 100%;
+    text-decoration: none;
+}
+
+.create-card:hover {
+    background: #fafafa;
+}
+
+
+.plus {
+    font-size: 40px;
+    margin-bottom: 10px;
+}
+
+.preview {
+    height: 100px;
+    background: #e9ecf1;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.card-title {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.card-date {
+    font-size: 12px;
+    color: #777;
+}
+
+.menu {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.card-wrapper {
+    position: relative;
+    flex: 1 1 300px;
+    max-width: 100%;
+    min-width: 0;
+}
+
+footer {
+    flex-shrink: 0; 
+    border-top: 1px solid #e0e0e0;
+    padding: 10px 20px;
+}
+
+.bottom-links {
+    display: flex;
+    flex-wrap: wrap; 
+    gap: 20px;       
+    justify-content: center; 
+}
+
+.bottom-links a {
+    font-size: 12px;       
+    color: #666;           
+    text-decoration: none; 
+    transition: color 0.3s;
+}
+  
+.bottom-links a:hover {
+    color: #000;           
+    text-decoration: underline;
+}
+/* ===== Секция авторизации ===== */
+.auth-section {
+    position: relative;
+}
+
+
+
+/* ===== Выпадающий блок аккаунта ===== */
+.account-dropdown {
+    position: fixed;
+    top: 66px; 
+    right: 24px; 
+    background: white;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    min-width: 220px;
+    z-index: 1000;
+    padding: 0;
+}
+
+/* Шапка выпадающего меню */
+.dropdown-header {
+    padding: 14px 16px 10px 16px;
+}
+
+.dropdown-name {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 2px;
+}
+
+.dropdown-email {
+    font-size: 12px;
+    color: #888;
+}
+
+/* Разделитель */
+.dropdown-divider {
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 0;
+}
+
+/* Кнопка выхода */
+.logout-btn {
+    display: block;
+    width: 100%;
+    padding: 12px 16px;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: #333;
+    transition: background 0.15s;
+}
+
+.logout-btn:hover {
+    background: #f5f5f5;
+    color: #e74c3c;
+}
+
+.cards-grid {
+    position: relative;
+}
+
+.cards-overlay {
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    right: -8px;
+    bottom: -8px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: opacity 0.3s ease;
+    border-radius: 4px;
+}
+
+.cards-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.overlay-content {
+    text-align: center;
+    padding: 40px 20px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    max-width: 400px;
+    width: 100%;
+}
+
+.overlay-icon {
+    font-size: 40px;
+    margin-bottom: 16px;
+    opacity: 0.6;
+}
+
+.overlay-text {
+    font-size: 14px;
+    color: #888;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+.overlay-btn {
+    display: inline-block;
+    padding: 10px 32px;
+    background: white;
+    border: 1px solid #333;
+    color: #333;
+    text-decoration: none;
+    font-size: 14px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.overlay-btn:hover {
+    background: #f0f0f0;
+}
+
+.icon-join {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 10px;
+}
+
+.square {
+    position: absolute;
+    width: 25px;
+    height: 25px;
+    border: 2px solid #666;
+    border-radius: 4px;
+}
+
+.s1 { top: 0; left: 0; }
+.s2 { 
+    bottom: 0; 
+    right: 0; 
+    background: white; /* Чтобы перекрывал первый квадрат */
+    border-color: #494949;
+}
+
+/* Модальное окно */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.4); 
+    backdrop-filter: blur(3px); 
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.modal {
+     background: #ffffff;
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    max-width: 300px; 
+    width: 100%;
+    text-align: center;
+    box-sizing: border-box;
+    border: none; /
+}
+
+.modal h3 { 
+   margin-top: 0;
+    font-size: 18px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+}
+
+.modal input {
+    width: 100%;
+    padding: 14px 10px;
+    margin-bottom: 16px;
+    border: 1px solid #333;
+    border-radius: 0;
+    background: transparent;
+    font-size: 14px;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+    color: #111;
+    outline: none;
+}
+
+.modal input:focus {
+    background: #333;
+    color: white;
+    border-color: #333;
+}
+
+.modal .text-block {
+    border: 1px solid #333;
+    padding: 10px 12px;
+    margin: 15px 0;
+    background: transparent;
+    font-size: 13px;
+    text-align: left;
+    color: #222;
+    letter-spacing: 0.3px;
+    line-height: 1.4;
+}
+
+/* Контейнер для кнопок, чтобы они шли друг под другом (как в вашем стиле) или в ряд */
+.modal-buttons { 
+    display: flex; 
+    flex-direction: column; /* Кнопки в столбик, так как у них width: 100% */
+    gap: 0px; 
+}
+
+.btn, button:not(.no-style) {
+    margin-bottom: 16px;
+    width: 100%;
+    background: transparent;
+    color: #333;
+    padding: 10px 20px;
+    border: 1px solid #333;
+    border-radius: 0;
+    font-size: 14px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    position: relative;
+}
+
+.btn:hover, button:not(.no-style):hover {
+    background: #333;
+    color: #fff;
+}
+
+.btn:active, button:not(.no-style):active {
+    background: #000;
+    transform: translateY(2px);
+}
+
+/* Кнопка пользователя */
+.user-btn {
+    display: flex; 
+    align-items: center;
+    gap: 4px;
+    width: auto;          
+    margin-bottom: 0;     
+    padding: 8px 16px;  
+
+    background: transparent;
+    color: #333;
+    border: 1px solid #333;
+    transition: all 0.2s ease-in-out;
+}
+
+.user-btn:hover {
+    background: #333; 
+    color: #fff;      
+}
+
+.user-btn:hover .arrow {
+    color: #fff;
+}
+
+.user-btn:active {
+    background: #000;
+    transform: translateY(2px);
+}
+
+.arrow {
+    font-size: 10px;
+    transition: transform 0.2s, color 0.2s;
+    color: #666;
+}
+
+.user-btn.active .arrow {
+    transform: rotate(180deg);
+}
+
+@media (min-width: 2560px) {
+  html {
+    zoom: 1.8; /* Увеличит весь сайт в 1.5 раза */
+  }
+}
+
+.card-wrapper {
+    position: relative;
+}
+
+.card-wrapper .menu {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 5;
+    color: #999;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.card-wrapper:hover .menu {
+    opacity: 1;
+}
+
+.card-wrapper .menu:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.card-menu-dropdown {
+    position: absolute;
+    top: 38px;
+    right: 10px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    z-index: 100;
+    min-width: 150px;
+    display: none;
+}
+
+.card-menu-dropdown.open {
+    display: block;
+}
+
+.card-menu-item {
+    padding: 10px 16px;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+    transition: background 0.15s;
+    text-align: left;
+}
+
+.card-menu-item:hover {
+    background: #f5f5f5;
+}
+
+.card-menu-item.danger {
+    color: #e74c3c;
+}
+
+.card-menu-item.danger:hover {
+    background: #fef2f2;
+}

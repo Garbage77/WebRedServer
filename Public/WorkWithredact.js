@@ -1,0 +1,1860 @@
+//#region Создание элементов блок-схемы драг энд аут
+const svg = document.getElementById('canvas-svg');
+const mainLayer = document.getElementById('main-layer');
+
+
+const dragGhost = document.createElement('div');
+dragGhost.style.cssText = `
+    position: absolute; 
+    top: -1000px; 
+    border: 2px solid #333; 
+    background: white; 
+    pointer-events: none;
+`;
+document.body.appendChild(dragGhost);
+
+document.querySelectorAll('.draggable-item').forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+        const type = item.getAttribute('data-type');
+        e.dataTransfer.setData('shapeType', type);
+
+        // ПОЛНЫЙ СБРОС СТИЛЕЙ ПРИЗРАКА
+        dragGhost.innerHTML = '';
+        dragGhost.style.border = 'none';
+        dragGhost.style.background = 'transparent';
+        dragGhost.style.borderRadius = '0';
+        dragGhost.style.transform = 'none';
+        dragGhost.style.width = 'auto';
+        dragGhost.style.height = 'auto';
+
+        if (type === 'decision') {
+            // Ромб
+            dragGhost.innerHTML = `
+                <svg width="60" height="60" style="display: block;">
+                    <rect x="5" y="5" width="50" height="50" fill="white" stroke="black" stroke-width="2" transform="rotate(45, 30, 30)"/>
+                </svg>`;
+            e.dataTransfer.setDragImage(dragGhost, 30, 30);
+        } 
+        else if (type === 'data') {
+            // Параллелограмм
+            dragGhost.innerHTML = `
+                <svg width="100" height="50" style="display: block;">
+                    <polygon points="15,2 95,2 85,48 5,48" fill="white" stroke="black" stroke-width="2"/>
+                </svg>`;
+            e.dataTransfer.setDragImage(dragGhost, 50, 25);
+        }
+        else if (type === 'terminal') {
+            // Терминатор (овал)
+            dragGhost.innerHTML = `
+                <svg width="100" height="50" style="display: block;">
+                    <rect x="0" y="0" width="100" height="50" rx="25" ry="25" fill="white" stroke="black" stroke-width="2"/>
+                </svg>`;
+            e.dataTransfer.setDragImage(dragGhost, 50, 25);
+        }
+        else if (type === 'predefined') {
+            // Предопределенный процесс (с вертикальными линиями)
+            dragGhost.innerHTML = `
+                <svg width="100" height="50" style="display: block;">
+                    <rect x="0" y="0" width="100" height="50" fill="white" stroke="black" stroke-width="2"/>
+                    <line x1="20" y1="0" x2="20" y2="50" stroke="black" stroke-width="2"/>
+                    <line x1="80" y1="0" x2="80" y2="50" stroke="black" stroke-width="2"/>
+                </svg>`;
+            e.dataTransfer.setDragImage(dragGhost, 50, 25);
+        }
+        else if (type === 'connector') {
+            // Соединитель (круг)
+            dragGhost.innerHTML = `
+                <svg width="40" height="40" style="display: block;">
+                    <circle cx="20" cy="20" r="18" fill="white" stroke="black" stroke-width="2"/>
+                </svg>`;
+            e.dataTransfer.setDragImage(dragGhost, 20, 20);
+        }
+        else {
+            // Обычный процесс
+            dragGhost.innerHTML = `
+                <svg width="100" height="50" style="display: block;">
+                    <rect x="0" y="0" width="100" height="50" fill="white" stroke="black" stroke-width="2"/>
+                </svg>`;
+            e.dataTransfer.setDragImage(dragGhost, 50, 25);
+        }
+    });
+});
+
+// 2. Логика сброса (Drop) на SVG
+svg.addEventListener('dragover', (e) => {
+    e.preventDefault(); 
+    e.dataTransfer.dropEffect = 'copy';
+});
+
+svg.addEventListener('drop', (e) => {
+    e.preventDefault();
+    console.log("Объект брошен!");
+
+    const type = e.dataTransfer.getData('shapeType');
+    console.log("Тип объекта:", type);
+
+    const rect = svg.getBoundingClientRect();
+    const canvasArea = document.querySelector('.canvas-area');
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (type) {
+        createNode(type, x, y);
+    } else {
+        console.error("Тип не передан! Проверь setData в dragstart");
+    }
+});
+
+function createNode(type, x, y) {
+    const ns = "http://www.w3.org/2000/svg";
+    const g = document.createElementNS(ns, "g");
+    
+    g.setAttribute("transform", `translate(${x}, ${y})`);
+    g.setAttribute("data-type", type);
+    
+    let shape;
+    
+    if (type === 'decision') {
+        // Ромб
+        shape = document.createElementNS(ns, "polygon");
+        shape.setAttribute("points", "-25,0 0,-25 25,0 0,25");
+        shape.setAttribute("fill", "#ffffff");
+        shape.setAttribute("stroke", "#1a1a1a");
+        shape.setAttribute("stroke-width", "2");
+    } 
+    else if (type === 'data') {
+        // Параллелограмм
+        shape = document.createElementNS(ns, "polygon");
+        shape.setAttribute("points", "-35,-25 65,-25 55,25 -45,25");
+        shape.setAttribute("fill", "#ffffff");
+        shape.setAttribute("stroke", "#1a1a1a");
+        shape.setAttribute("stroke-width", "2");
+    }
+    else if (type === 'predefined') {
+        // Предопределенный процесс (с вертикальными линиями)
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("x", "-50");
+        rect.setAttribute("y", "-25");
+        rect.setAttribute("width", "100");
+        rect.setAttribute("height", "50");
+        rect.setAttribute("fill", "#ffffff");
+        rect.setAttribute("stroke", "#1a1a1a");
+        rect.setAttribute("stroke-width", "2");
+        shape = rect;
+        
+        // Добавляем вертикальные линии на 10% и 90% от ширины
+        const line1 = document.createElementNS(ns, "line");
+        const leftX = -50 + 100 * 0.1; // -50 + 10 = -40
+        line1.setAttribute("x1", leftX);
+        line1.setAttribute("x2", leftX);
+        line1.setAttribute("y1", "-25");
+        line1.setAttribute("y2", "25");
+        line1.setAttribute("stroke", "#1a1a1a");
+        line1.setAttribute("stroke-width", "2");
+        
+        const line2 = document.createElementNS(ns, "line");
+        const rightX = -50 + 100 * 0.9; // -50 + 90 = 40
+        line2.setAttribute("x1", rightX);
+        line2.setAttribute("x2", rightX);
+        line2.setAttribute("y1", "-25");
+        line2.setAttribute("y2", "25");
+        line2.setAttribute("stroke", "#1a1a1a");
+        line2.setAttribute("stroke-width", "2");
+        
+        g.appendChild(rect);
+        g.appendChild(line1);
+        g.appendChild(line2);
+        mainLayer.appendChild(g);
+        
+        makeTextEditable(g, type);
+        makeDraggable(g);
+        makeSelectable(g);
+        addResizeHandles(g);
+        updateHandlesPosition(g, -50, -25, 100, 50);
+        return;
+    }
+    else if (type === 'connector') {
+        // Соединитель (эллипс изначально в виде круга)
+        shape = document.createElementNS(ns, "ellipse");
+        shape.setAttribute("cx", "0");
+        shape.setAttribute("cy", "0");
+        shape.setAttribute("rx", "15");
+        shape.setAttribute("ry", "15");
+        shape.setAttribute("fill", "#ffffff");
+        shape.setAttribute("stroke", "#1a1a1a");
+        shape.setAttribute("stroke-width", "2");
+    }
+    else if (type === 'terminal') {
+        // Терминатор (скругленный прямоугольник)
+        shape = document.createElementNS(ns, "rect");
+        shape.setAttribute("x", "-50");
+        shape.setAttribute("y", "-25");
+        shape.setAttribute("width", "100");
+        shape.setAttribute("height", "50");
+        shape.setAttribute("rx", "25");
+        shape.setAttribute("fill", "#ffffff");
+        shape.setAttribute("stroke", "#1a1a1a");
+        shape.setAttribute("stroke-width", "2");
+    }
+    else {
+        // Обычный процесс
+        shape = document.createElementNS(ns, "rect");
+        shape.setAttribute("x", "-50");
+        shape.setAttribute("y", "-25");
+        shape.setAttribute("width", "100");
+        shape.setAttribute("height", "50");
+        shape.setAttribute("fill", "#ffffff");
+        shape.setAttribute("stroke", "#1a1a1a");
+        shape.setAttribute("stroke-width", "2");
+    }
+
+    if (shape) {
+        g.appendChild(shape);
+    }
+    
+    mainLayer.appendChild(g);
+    emitEvent('block:create', { blockId: g.getAttribute('data-id'), blockType: type, x, y });
+    makeTextEditable(g, type);
+    makeDraggable(g);
+    makeSelectable(g);
+
+    addResizeHandles(g);
+
+    if (type === 'decision') {
+        updateHandlesPosition(g, -25, -25, 50, 50);
+    } else if (type === 'connector') {
+        updateHandlesPosition(g, -15, -15, 30, 30);
+    } else if (type === 'data') {
+        const bbox = shape.getBBox();
+        updateHandlesPosition(g, bbox.x, bbox.y, bbox.width, bbox.height);
+    } else {
+        updateHandlesPosition(g, -50, -25, 100, 50);
+    }
+}
+
+// Функция для добавления и редактирования текста
+function makeTextEditable(group, type) {
+    const ns = "http://www.w3.org/2000/svg";
+    let text = document.createElementNS(ns, "text");
+    
+    let defaultText = "";
+    switch(type) {
+        case 'terminal':
+            defaultText = "Пуск";
+            break;
+        case 'process':
+            defaultText = "Процесс";
+            break;
+        case 'predefined':
+            defaultText = "Подпрограмма";
+            break;
+        case 'decision':
+            defaultText = "Решение";
+            break;
+        case 'document':
+            defaultText = "Документ";
+            break;
+        case 'data':
+            defaultText = "Данные";
+            break;
+        case 'connector':
+            defaultText = "Соединитель";
+            break;
+    }
+    
+    text.setAttribute("x", "0");
+    text.setAttribute("y", "5");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("font-size", "12");
+    text.setAttribute("font-family", "'Inter', sans-serif");
+    text.setAttribute("fill", "#1a1a1a");
+    text.setAttribute("pointer-events", "none");
+    text.textContent = defaultText;
+    
+    group.appendChild(text);
+    
+    // Добавляем возможность редактирования по двойному клику
+    group.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        editText(group, text);
+    });
+}
+
+// Функция для редактирования текста
+function editText(group, textElement) {
+    const currentText = textElement.textContent;
+    const groupRect = group.getBoundingClientRect();
+    const canvasArea = document.querySelector('.canvas-area');
+    const canvasRect = canvasArea.getBoundingClientRect();
+    
+    // Создаем input элемент
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentText;
+    input.style.position = 'fixed';
+    input.style.left = `${groupRect.left + groupRect.width / 2 - 50}px`;
+    input.style.top = `${groupRect.top + groupRect.height / 2 - 15}px`;
+    input.style.width = '100px';
+    input.style.height = '30px';
+    input.style.fontSize = '12px';
+    input.style.fontFamily = "'Inter', sans-serif";
+    input.style.textAlign = 'center';
+    input.style.border = '2px solid #0066cc';
+    input.style.borderRadius = '4px';
+    input.style.outline = 'none';
+    input.style.zIndex = '1000';
+    input.style.backgroundColor = 'white';
+    
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+    
+    // Функция сохранения текста
+    const saveText = () => {
+        const newText = input.value.trim();
+        if (newText) {
+            textElement.textContent = newText;
+            emitEvent('block:text', {
+            blockId: group.getAttribute('data-id'),
+            text: newText
+            });
+        } else {
+            textElement.textContent = currentText;
+        }
+        document.body.removeChild(input);
+    };
+    
+    // Сохраняем при потере фокуса или нажатии Enter
+    input.addEventListener('blur', saveText);
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            saveText();
+        }
+    });
+}
+
+// Функция для перемещения блоков на холсте
+function makeDraggable(group) {
+    let isDragging = false;
+    let startX, startY;
+    let originalX, originalY;
+    let hasMoved = false;
+    
+    group.style.cursor = 'move';
+    group.setAttribute('cursor', 'move');
+    
+    group.addEventListener('mousedown', (e) => {
+        // Не перемещаем при двойном клике или если кликнули на текст
+       if (e.target.tagName === 'text' || e.ctrlKey || e.metaKey) return;
+        
+        e.stopPropagation();
+        isDragging = true;
+        hasMoved = false;
+        
+        // Получаем текущую позицию
+        const transform = group.getAttribute('transform');
+        const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+        if (match) {
+            originalX = parseFloat(match[1]);
+            originalY = parseFloat(match[2]);
+        }
+        
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        const onMouseMove = (moveEvent) => {
+            if (!isDragging) return;
+            
+            const dx = moveEvent.clientX - startX;
+            const dy = moveEvent.clientY - startY;
+            
+            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+                hasMoved = true;
+            }
+            
+            group.setAttribute('transform', `translate(${originalX + dx}, ${originalY + dy})`);
+        };
+        
+        const onMouseUp = () => {
+            isDragging = false;
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            updateAllConnections();
+            saveFlowchart(); 
+            const match2 = group.getAttribute('transform').match(/translate\(([^,]+),\s*([^)]+)\)/);
+            emitEvent('block:move', {
+            blockId: group.getAttribute('data-id'),
+            x: parseFloat(match2[1]),
+            y: parseFloat(match2[2])
+            });
+        };
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+}
+
+//#endregion
+
+//#region Выделение и удаление блоков
+
+// Хранилище для выделенных блоков
+let selectedBlocks = new Set();
+
+// Функция для очистки выделения
+function clearSelection() {
+    selectedBlocks.forEach(block => {
+        block.classList.remove('selected-block');
+        // Сбрасываем цвет соединений
+        if (block.classList.contains('connection-group')) {
+            const path = block.querySelector('path');
+            if (path) {
+                path.setAttribute('stroke', '#1a1a1a');
+                path.setAttribute('stroke-width', '2');
+            }
+        }
+        // Скрываем маркеры у блоков
+        if (block.hasAttribute('data-type')) {
+            toggleResizeHandles(block, false);
+        }
+    });
+    selectedBlocks.clear();
+}
+
+// Функция для выделения блока
+function selectBlock(block, isMultiSelect = false) {
+    if (!isMultiSelect) {
+        clearSelection();
+    }
+    block.classList.add('selected-block'); 
+    selectedBlocks.add(block);
+}
+
+// Функция для удаления выделенных блоков
+function deleteSelectedBlocks() {
+    const layer = getConnectionsLayer();
+    
+    const blockIds = [];
+        selectedBlocks.forEach(block => {
+        if (block.hasAttribute('data-type')) blockIds.push(block.getAttribute('data-id'));
+            if (block.classList.contains('connection-group')) {
+                emitEvent('conn:delete', { connId: block.getAttribute('data-connection-id') });
+            }
+        });
+    if (blockIds.length) emitEvent('block:delete', { blockIds });
+
+    selectedBlocks.forEach(block => {
+        // Если это блок — удаляем его соединения
+        if (block.hasAttribute('data-type')) {
+            const blockId = block.getAttribute('data-id');
+            if (blockId) {
+                removeConnectionsForBlock(blockId);
+            }
+        }
+        
+        // Если это соединение — удаляем его
+        if (block.classList.contains('connection-group')) {
+            const connId = block.getAttribute('data-connection-id');
+            // Удаляем из массива
+            connections = connections.filter(conn => conn.id !== connId);
+            // Удаляем маркер стрелки
+            const arrowId = 'arrow_' + connId;
+            const defs = svg.querySelector('defs');
+            if (defs) {
+                const marker = defs.querySelector(`#${arrowId}`);
+                if (marker) marker.remove();
+            }
+        }
+        
+        block.remove();
+    });
+    
+    clearSelection();
+}
+
+function removeConnectionsForBlock(blockId) {
+    const layer = getConnectionsLayer();
+    
+    // Находим все соединения, связанные с блоком
+    const toRemove = connections.filter(conn => 
+        conn.fromBlockId === blockId || conn.toBlockId === blockId
+    );
+    
+    // Удаляем их из DOM
+    toRemove.forEach(conn => {
+        const element = layer.querySelector(`[data-connection-id="${conn.id}"]`);
+        if (element) element.remove();
+        
+        // Удаляем маркер стрелки
+        const arrowId = 'arrow_' + conn.id;
+        const defs = svg.querySelector('defs');
+        if (defs) {
+            const marker = defs.querySelector(`#${arrowId}`);
+            if (marker) marker.remove();
+        }
+    });
+    
+    // Удаляем из массива
+    connections = connections.filter(conn => 
+        conn.fromBlockId !== blockId && conn.toBlockId !== blockId
+    );
+}
+
+// Обработчик клика по блоку для выделения
+function makeSelectable(group) {
+    group.addEventListener('click', (e) => {
+        e.stopPropagation();
+        
+        if (e.ctrlKey || e.metaKey) {
+            // Множественное выделение с Ctrl/Cmd
+            if (selectedBlocks.has(group)) {
+                // Снимаем выделение
+                group.classList.remove('selected-block');
+                selectedBlocks.delete(group);
+            } else {
+                selectBlock(group, true);
+            }
+        } else {
+            // Одиночное выделение
+            selectBlock(group);
+        }
+    });
+}
+
+// Обработчик клавиши Delete
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Delete' && selectedBlocks.size > 0) {
+        e.preventDefault();
+        deleteSelectedBlocks();
+    }
+});
+
+// Очистка выделения при клике на пустую область холста
+svg.addEventListener('click', (e) => {
+    if (e.ctrlKey || e.metaKey) return;
+    
+    // Проверяем, кликнули ли по блоку или соединению
+    const clickedBlock = e.target.closest('g[data-type]');
+    const clickedConnection = e.target.closest('.connection-group');
+    
+    // Если кликнули по path внутри connection-group, поднимаемся до группы
+    let connectionGroup = clickedConnection;
+    if (!connectionGroup && e.target.tagName === 'path') {
+        connectionGroup = e.target.parentElement;
+        if (connectionGroup && !connectionGroup.classList.contains('connection-group')) {
+            connectionGroup = null;
+        }
+    }
+
+    // Если кликнули НЕ по блоку и НЕ по соединению, очищаем выделение
+    if (!clickedBlock && !connectionGroup) {
+        clearSelection();
+    }
+});
+
+//#endregion
+
+//#region Изменение размера блоков
+
+// Добавляем маркеры для изменения размера
+function addResizeHandles(group) {
+    const ns = "http://www.w3.org/2000/svg";
+    const handles = [
+        { x: -55, y: -30, cursor: 'nw-resize', dir: 'top-left' },
+        { x: 55, y: -30, cursor: 'ne-resize', dir: 'top-right' },
+        { x: -55, y: 30, cursor: 'sw-resize', dir: 'bottom-left' },
+        { x: 55, y: 30, cursor: 'se-resize', dir: 'bottom-right' }
+    ];
+    
+    handles.forEach(handle => {
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("x", handle.x);
+        rect.setAttribute("y", handle.y);
+        rect.setAttribute("width", "10");
+        rect.setAttribute("height", "10");
+        rect.setAttribute("fill", "#3b82f6");
+        rect.setAttribute("stroke", "#ffffff");
+        rect.setAttribute("stroke-width", "1");
+        rect.setAttribute("cursor", handle.cursor);
+        rect.setAttribute("class", "resize-handle");
+        rect.style.display = "none";
+        
+        rect.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            startResize(group, handle.dir, e);
+        });
+        
+        group.appendChild(rect);
+    });
+}
+
+// Функция изменения размера надеюсь работает
+
+function startResize(group, direction, startEvent) {
+    startEvent.stopPropagation();
+    startEvent.preventDefault();
+    
+    const startX = startEvent.clientX;
+    const startY = startEvent.clientY;
+    
+    // Получаем текущий transform
+    const transform = group.getAttribute('transform');
+    const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+    let posX = match ? parseFloat(match[1]) : 0;
+    let posY = match ? parseFloat(match[2]) : 0;
+    
+    const type = group.getAttribute('data-type');
+    const shape = group.querySelector('rect, polygon, ellipse, path')
+    let startWidth, startHeight, startXPos, startYPos;
+    const bbox = shape.getBBox();
+    startWidth = bbox.width;
+    startHeight = bbox.height;
+    startXPos = bbox.x;
+    startYPos = bbox.y;
+
+    if(type === 'data'){
+        const points = shape.getAttribute('points').split(' ').map(p => p.split(',').map(Number));
+        startXPos = points[0][0];
+        startYPos = points[0][1];
+        startWidth = points[1][0] - startXPos;
+        startHeight = points[3][1] - startYPos;
+    }
+
+    const onMouseMove = (moveEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+
+        let newWidth = 0;
+        let newHeight = 0;
+        let newX = 0;
+        let newY = 0;
+        
+        switch(direction) {
+            case 'top-left':
+                newWidth = startWidth - dx;
+                newHeight = startHeight - dy;
+                newX = startXPos + dx;
+                newY = startYPos + dy;
+                break;
+            case 'top-right':
+                newWidth = startWidth + dx;
+                newHeight = startHeight - dy;
+                newX = startXPos;
+                newY = startYPos + dy;
+                break;
+            case 'bottom-left':
+                newWidth = startWidth - dx;
+                newHeight = startHeight + dy;
+                newX = startXPos + dx;
+                newY = startYPos;
+                break;
+            case 'bottom-right':
+                newWidth = startWidth + dx;
+                newHeight = startHeight + dy;
+                newX = startXPos;
+                newY = startYPos;
+                break;
+        }
+        
+        const minWidth = 30;
+        const minHeight = 30;
+        if (newWidth < minWidth) newWidth = minWidth;
+        if (newHeight < minHeight) newHeight = minHeight;
+        
+        // Применяем изменения в зависимости от типа фигуры
+        
+        if (type === 'decision') {
+            // Ромб - растягивается как прямоугольник
+            const points = `${newX + newWidth/2},${newY} ${newX + newWidth},${newY + newHeight/2} ${newX + newWidth/2},${newY + newHeight} ${newX},${newY + newHeight/2}`;
+            shape.setAttribute('points', points);
+        }
+        else if (type === 'connector') {
+            const rx = newWidth / 2;
+            const ry = newHeight / 2;
+
+            shape.setAttribute('rx', rx);
+            shape.setAttribute('ry', ry);
+            shape.setAttribute('cx', newX + rx);
+            shape.setAttribute('cy', newY + ry);
+        }
+        else if (type === 'data') {
+            // Параллелограмм - растягивается как прямоугольник
+            const skew = 20; // величина скоса
+            const points = `${newX},${newY} ${newX + newWidth},${newY} ${newX + newWidth - skew},${newY + newHeight} ${newX - skew},${newY + newHeight}`;
+            shape.setAttribute('points', points);
+        }
+        else {
+            // Прямоугольные блоки
+            shape.setAttribute('width', newWidth);
+            shape.setAttribute('height', newHeight);
+            shape.setAttribute('x', newX);
+            shape.setAttribute('y', newY);
+            
+            if (type === 'terminal') {
+                shape.setAttribute('rx', newHeight / 2);
+                shape.setAttribute('ry', newHeight / 2);
+            }
+            
+            if (type === 'predefined') {
+                const lines = group.querySelectorAll('line');
+                if (lines.length === 2) {
+                    const leftLineX = newX + newWidth * 0.1;
+                    const rightLineX = newX + newWidth * 0.9;
+                    
+                    lines[0].setAttribute('x1', leftLineX);
+                    lines[0].setAttribute('x2', leftLineX);
+                    lines[0].setAttribute('y1', newY);
+                    lines[0].setAttribute('y2', newY + newHeight);
+                    
+                    lines[1].setAttribute('x1', rightLineX);
+                    lines[1].setAttribute('x2', rightLineX);
+                    lines[1].setAttribute('y1', newY);
+                    lines[1].setAttribute('y2', newY + newHeight);
+                }
+            }
+        }
+
+        const text = group.querySelector('text');
+        if (text) {
+            text.setAttribute('x', newX + newWidth / 2);
+            text.setAttribute('y', newY + newHeight / 2 + 5);
+        }
+        
+        // Обновляем маркеры
+        updateHandlesPosition(group, newX, newY, newWidth, newHeight);
+        updatePortsPosition(group)
+    };
+    
+    const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        saveFlowchart();
+        const shape2 = group.querySelector('rect, polygon, ellipse');
+        const bbox2 = shape2.getBBox();
+        emitEvent('block:resize', {
+        blockId: group.getAttribute('data-id'),
+        type: group.getAttribute('data-type'),
+        points: shape2.getAttribute('points'),
+        rx: shape2.getAttribute('rx'), ry: shape2.getAttribute('ry'),
+        cx: shape2.getAttribute('cx'), cy: shape2.getAttribute('cy'),
+        x: shape2.getAttribute('x'),  y: shape2.getAttribute('y'),
+        width: shape2.getAttribute('width'), height: shape2.getAttribute('height'),
+        hx: bbox2.x, hy: bbox2.y, hw: bbox2.width, hh: bbox2.height
+        });
+    };
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+// Обновление позиции маркеров
+function updateHandlesPosition(group, x, y, width, height) {
+    const handles = group.querySelectorAll('.resize-handle');
+    if (handles.length === 4) {
+        handles[0].setAttribute('x', x - 5);
+        handles[0].setAttribute('y', y - 5);
+        handles[1].setAttribute('x', x + width - 5);
+        handles[1].setAttribute('y', y - 5);
+        handles[2].setAttribute('x', x - 5);
+        handles[2].setAttribute('y', y + height - 5);
+        handles[3].setAttribute('x', x + width - 5);
+        handles[3].setAttribute('y', y + height - 5);
+    }
+}
+
+// Показываем/скрываем маркеры при выделении
+function toggleResizeHandles(group, show) {
+    const handles = group.querySelectorAll('.resize-handle');
+    handles.forEach(handle => {
+        handle.style.display = show ? 'block' : 'none';
+    });
+}
+
+// Переопределяем функции выделения
+const originalSelectBlock = window.selectBlock || function() {};
+const originalClearSelection = window.clearSelection || function() {};
+
+window.selectBlock = function(block, isMultiSelect = false) {
+    if (originalSelectBlock) originalSelectBlock(block, isMultiSelect);
+    toggleResizeHandles(block, true);
+};
+
+
+//#endregion
+
+//#region Сохранение и загрузка блок-схемы
+
+// Получаем ID схемы из URL (?id=123) если открыли существующую
+const urlParams = new URLSearchParams(window.location.search);
+let currentFlowchartId = urlParams.get('id') || null;
+
+function getPreviewImage() {
+  const ns = "http://www.w3.org/2000/svg";
+
+  // Находим реальные блоки и считаем их bbox
+  const blocks = mainLayer.querySelectorAll('g[data-type]');
+  if (blocks.length === 0) return '';
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  blocks.forEach(block => {
+    const transform = block.getAttribute('transform') || '';
+    const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+    const tx = match ? parseFloat(match[1]) : 0;
+    const ty = match ? parseFloat(match[2]) : 0;
+
+    const shape = block.querySelector('rect, polygon, ellipse');
+    if (!shape) return;
+    const bbox = shape.getBBox();
+
+    minX = Math.min(minX, tx + bbox.x);
+    minY = Math.min(minY, ty + bbox.y);
+    maxX = Math.max(maxX, tx + bbox.x + bbox.width);
+    maxY = Math.max(maxY, ty + bbox.y + bbox.height);
+  });
+
+  const padding = 20;
+  minX -= padding; minY -= padding;
+  maxX += padding; maxY += padding;
+  const w = maxX - minX;
+  const h = maxY - minY;
+
+  // Собираем мини-SVG только с нужной областью
+  const miniSvg = document.createElementNS(ns, "svg");
+  miniSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  miniSvg.setAttribute("viewBox", `${minX} ${minY} ${w} ${h}`);
+  miniSvg.setAttribute("width", "280");
+  miniSvg.setAttribute("height", "160");
+
+  // Копируем defs (стрелки маркеры)
+  const defs = svg.querySelector('defs');
+  if (defs) miniSvg.appendChild(defs.cloneNode(true));
+
+  // Копируем соединения
+  const connLayer = document.getElementById('connections-layer');
+  if (connLayer) {
+    const connClone = connLayer.cloneNode(true);
+    // Убираем лишнее
+    connClone.querySelectorAll('.connection-port, .resize-handle').forEach(el => el.remove());
+    miniSvg.appendChild(connClone);
+  }
+
+  // Копируем блоки
+  const layerClone = mainLayer.cloneNode(true);
+  layerClone.querySelectorAll('.connection-port, .resize-handle').forEach(el => el.remove());
+  // Убираем прозрачный фоновый rect
+  const bgRect = layerClone.querySelector('rect[fill="transparent"]');
+  if (bgRect) bgRect.remove();
+  miniSvg.appendChild(layerClone);
+
+  const serializer = new XMLSerializer();
+  const svgStr = serializer.serializeToString(miniSvg);
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
+}
+
+function getSvgContent() {
+  return JSON.stringify({
+    blocks: mainLayer.innerHTML,
+    connections: connections
+  });
+}
+
+// Автосохранение в локал сторэдж
+function saveFlowchart() {
+  localStorage.setItem('flowchart_html', getSvgContent());
+}
+
+async function loadFlowchart() {
+  if (currentFlowchartId) {
+    try {
+      const res = await fetch(`/flowcharts/single/${currentFlowchartId}`);
+      const data = await res.json();
+      if (data.ok && data.flowchart.svg_content) {
+        restoreFromContent(data.flowchart.svg_content);
+        return;
+      }
+    } catch (e) {
+      console.error('Ошибка загрузки схемы:', e);
+    }
+  }
+
+  const savedHtml = localStorage.getItem('flowchart_html');
+  if (savedHtml) restoreFromContent(savedHtml);
+}
+
+function restoreFromContent(content) {
+  let blocksHtml, savedConnections;
+
+  try {
+    const parsed = JSON.parse(content);
+    blocksHtml = parsed.blocks;
+    savedConnections = parsed.connections || [];
+  } catch(e) {
+    // Старый формат — просто HTML
+    blocksHtml = content;
+    savedConnections = [];
+  }
+
+  mainLayer.innerHTML = blocksHtml;
+  restoreBlockHandlers();
+
+  // Восстанавливаем connections-layer
+  let connLayer = document.getElementById('connections-layer');
+  if (!connLayer) {
+    const ns = "http://www.w3.org/2000/svg";
+    connLayer = document.createElementNS(ns, "g");
+    connLayer.setAttribute('id', 'connections-layer');
+    svg.insertBefore(connLayer, mainLayer);
+    connectionsLayer = connLayer;
+  } else {
+    connLayer.innerHTML = '';
+    connectionsLayer = connLayer;
+  }
+
+  // Восстанавливаем массив и перерисовываем соединения
+  connections = savedConnections;
+  
+  // Находим максимальный номер соединения чтобы счётчик не дублировал
+  connectionCounter = connections.reduce((max, conn) => {
+    const num = parseInt(conn.id.replace('conn_', '')) || 0;
+    return Math.max(max, num);
+  }, 0);
+
+  connections.forEach(conn => drawConnection(conn));
+}
+
+function restoreBlockHandlers() {
+  const blocks = mainLayer.querySelectorAll('g[data-type]');
+  blocks.forEach(block => {
+    makeDraggable(block);
+    makeSelectable(block);
+    addPortsToBlock(block, block.getAttribute('data-type'));
+
+    const text = block.querySelector('text');
+    if (text) {
+      const newText = text.cloneNode(true);
+      text.parentNode.replaceChild(newText, text);
+      block.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        const currentText = block.querySelector('text');
+        if (currentText) editText(block, currentText);
+      });
+    }
+
+    const handles = block.querySelectorAll('.resize-handle');
+    const directionMap = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+    handles.forEach((handle, index) => {
+      const newHandle = handle.cloneNode(true);
+      handle.parentNode.replaceChild(newHandle, handle);
+      newHandle.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        startResize(block, directionMap[index], e);
+      });
+    });
+  });
+}
+
+window.addEventListener('load', async () => {
+  await loadFlowchart();
+
+  const exitBtn = document.querySelector('.btn-exit');
+  if (exitBtn) {
+    exitBtn.closest('a').addEventListener('click', (e) => {
+      e.preventDefault();
+
+      const userId = localStorage.getItem('userid');
+      if (!userId) {
+        window.location.href = '/MainMenu.html';
+        return;
+      }
+
+      if (currentFlowchartId) {
+        saveToServer(null).then(() => {
+          localStorage.removeItem('flowchart_html');
+          window.location.href = '/MainMenu.html';
+        });
+      } else {
+        showSaveModal(
+          async (title) => {
+            await saveToServer(title);
+            localStorage.removeItem('flowchart_html');
+            window.location.href = '/MainMenu.html';
+          },
+          () => {
+            localStorage.removeItem('flowchart_html');
+            window.location.href = '/MainMenu.html';
+          }
+        );
+      }
+    });
+  }
+});
+
+// Сохранение на сервер
+async function saveToServer(title) {
+  const userId = localStorage.getItem('userid');
+  if (!userId) { alert('Войдите в аккаунт'); return; }
+
+  const preview = getPreviewImage();
+  const svgContent = getSvgContent(); // теперь JSON со blocks + connections
+
+  if (currentFlowchartId) {
+    await fetch(`/flowcharts/${currentFlowchartId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview, svgContent })
+    });
+  } else {
+    const res = await fetch('/flowcharts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, title, preview, svgContent })
+    });
+    const data = await res.json();
+    if (data.ok) currentFlowchartId = data.flowchartId;
+  }
+
+  console.log('Схема сохранена на сервер');
+}
+
+// Показываем модалку при выходе
+function showSaveModal(onConfirm, onSkip) {
+  const overlay = document.getElementById('saveModalOverlay');
+  const input = document.getElementById('flowchartTitleInput');
+  const confirmBtn = document.getElementById('saveConfirmBtn');
+  const skipBtn = document.getElementById('saveSkipBtn');
+
+  input.value = '';
+  overlay.style.display = 'flex';
+  setTimeout(() => input.focus(), 100);
+
+  const confirm = async () => {
+    const title = input.value.trim();
+    if (!title) { alert('Введите название'); return; }
+    overlay.style.display = 'none';
+    await onConfirm(title);
+  };
+
+  const skip = () => {
+    overlay.style.display = 'none';
+    onSkip();
+  };
+
+  confirmBtn.onclick = confirm;
+  skipBtn.onclick = skip;
+
+  input.onkeydown = (e) => { if (e.key === 'Enter') confirm(); };
+}
+
+const originalDeleteSelectedBlocks = deleteSelectedBlocks;
+deleteSelectedBlocks = function() {
+  originalDeleteSelectedBlocks();
+  saveFlowchart();
+};
+
+const originalEditTextFunction = editText;
+editText = function(group, textElement) {
+  originalEditTextFunction(group, textElement);
+  const input = document.querySelector('input');
+  if (input) {
+    input.addEventListener('blur', () => saveFlowchart());
+    input.addEventListener('keypress', (e) => { if (e.key === 'Enter') saveFlowchart(); });
+  }
+};
+
+//#endregion
+
+//#region СОЕДИНЕНИЯ - Шаг 1: Порты
+
+function addPortsToBlock(group, type) {
+    const ns = "http://www.w3.org/2000/svg";
+    
+    // Получаем размеры блока
+    let bbox;
+    const shape = group.querySelector('rect, polygon, ellipse');
+    if (shape) {
+        bbox = shape.getBBox();
+    } else {
+        bbox = { x: -50, y: -25, width: 100, height: 50 };
+    }
+    
+    const cx = bbox.x + bbox.width / 2;
+    const cy = bbox.y + bbox.height / 2;
+    
+    const portPositions = {
+        top:    { x: cx, y: bbox.y },
+        bottom: { x: cx, y: bbox.y + bbox.height },
+        left:   { x: bbox.x, y: cy },
+        right:  { x: bbox.x + bbox.width, y: cy }
+    };
+    
+    ['top', 'bottom', 'left', 'right'].forEach(portName => {
+        const pos = portPositions[portName];
+        const circle = document.createElementNS(ns, "circle");
+        circle.setAttribute('cx', pos.x);
+        circle.setAttribute('cy', pos.y);
+        circle.setAttribute('r', '5');
+        circle.setAttribute('fill', '#3b82f6');
+        circle.setAttribute('stroke', 'white');
+        circle.setAttribute('stroke-width', '1');
+        circle.setAttribute('data-port', portName);
+        circle.classList.add('connection-port');
+        circle.style.display = 'none';
+        circle.style.cursor = 'crosshair';
+        group.appendChild(circle);
+    });
+    
+    group.addEventListener('mouseenter', () => {
+        const ports = group.querySelectorAll('.connection-port');
+        ports.forEach(p => { p.style.display = 'block'; });
+    });
+    
+    group.addEventListener('mouseleave', () => {
+        const ports = group.querySelectorAll('.connection-port');
+        ports.forEach(p => { p.style.display = 'none'; });
+    });
+    makePortsInteractive(group);
+}
+
+// Модифицируем createNode — добавляем вызов addPortsToBlock
+const _createNode = createNode;
+createNode = function(type, x, y) {
+    _createNode(type, x, y);
+    const allGroups = mainLayer.querySelectorAll('g[data-type]');
+    const lastGroup = allGroups[allGroups.length - 1];
+    addPortsToBlock(lastGroup, type);
+};
+
+function updatePortsPosition(group) {
+    const ports = group.querySelectorAll('.connection-port');
+    const shape = group.querySelector('rect, polygon, ellipse');
+    if (!shape) return;
+    
+    const bbox = shape.getBBox();
+    const cx = bbox.x + bbox.width / 2;
+    const cy = bbox.y + bbox.height / 2;
+    
+    const newPositions = {
+        top:    { x: cx, y: bbox.y },
+        bottom: { x: cx, y: bbox.y + bbox.height },
+        left:   { x: bbox.x, y: cy },
+        right:  { x: bbox.x + bbox.width, y: cy }
+    };
+    
+    ports.forEach(port => {
+        const portName = port.getAttribute('data-port');
+        const pos = newPositions[portName];
+        port.setAttribute('cx', pos.x);
+        port.setAttribute('cy', pos.y);
+    });
+}
+
+let isDrawing = false;
+let tempLine = null;
+let drawingFromGroup = null;
+let drawingFromPort = null;
+
+// Делаем порты кликабельными для начала рисования
+function makePortsInteractive(group) {
+    const ports = group.querySelectorAll('.connection-port');
+    
+    ports.forEach(port => {
+        port.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            startDrawingLine(group, port, e);
+        });
+    });
+}
+
+function startDrawingLine(group, port, event) {
+    isDrawing = true;
+    drawingFromGroup = group;
+    drawingFromPort = port.getAttribute('data-port');
+    
+    // Получаем координаты порта относительно SVG
+    const svgRect = svg.getBoundingClientRect();
+    const cx = parseFloat(port.getAttribute('cx'));
+    const cy = parseFloat(port.getAttribute('cy'));
+    const transform = group.getAttribute('transform');
+    const match = transform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+    const blockX = match ? parseFloat(match[1]) : 0;
+    const blockY = match ? parseFloat(match[2]) : 0;
+    
+    const startX = blockX + cx;
+    const startY = blockY + cy;
+    
+    // Создаем временную линию
+    const ns = "http://www.w3.org/2000/svg";
+    tempLine = document.createElementNS(ns, "line");
+    tempLine.setAttribute('x1', startX);
+    tempLine.setAttribute('y1', startY);
+    tempLine.setAttribute('x2', startX);
+    tempLine.setAttribute('y2', startY);
+    tempLine.setAttribute('stroke', '#3b82f6');
+    tempLine.setAttribute('stroke-width', '2');
+    tempLine.setAttribute('stroke-dasharray', '6,4');
+    tempLine.setAttribute('fill', 'none');
+    tempLine.setAttribute('pointer-events', 'none');
+    
+    // Добавляем линию в отдельный слой, если его нет
+    let connectionsLayer = document.getElementById('connections-layer');
+    if (!connectionsLayer) {
+        connectionsLayer = document.createElementNS(ns, "g");
+        connectionsLayer.setAttribute('id', 'connections-layer');
+        svg.insertBefore(connectionsLayer, mainLayer);
+    }
+    connectionsLayer.appendChild(tempLine);
+    
+    // Показываем все порты на всех блоках
+    showAllPorts();
+    
+    const onMouseMove = (moveEvent) => {
+        const rect = svg.getBoundingClientRect();
+        const mouseX = moveEvent.clientX - rect.left;
+        const mouseY = moveEvent.clientY - rect.top;
+        
+        tempLine.setAttribute('x2', mouseX);
+        tempLine.setAttribute('y2', mouseY);
+        
+        // Подсвечиваем порт под курсором
+        highlightPortUnderCursor(moveEvent.clientX, moveEvent.clientY);
+    };
+    
+    const onMouseUp = (upEvent) => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        
+        // Получаем координаты отпускания относительно SVG
+        const svgRect = svg.getBoundingClientRect();
+        const mouseX = upEvent.clientX - svgRect.left;
+        const mouseY = upEvent.clientY - svgRect.top;
+        
+        // Проверяем, попали ли на порт
+        const targetPort = findPortAtPosition(upEvent.clientX, upEvent.clientY);
+        
+        if (targetPort) {
+            const targetGroup = targetPort.closest('g[data-type]');
+            const targetPortName = targetPort.getAttribute('data-port');
+            
+            // Не даем соединить блок сам с собой
+            if (targetGroup !== drawingFromGroup) {
+                createConnection(drawingFromGroup, drawingFromPort, targetGroup, targetPortName, null, null);
+            }
+        } else {
+            // Создаем соединение со свободным концом
+            createConnection(drawingFromGroup, drawingFromPort, null, null, mouseX, mouseY);
+        }
+        
+        // Удаляем временную линию
+        if (tempLine) {
+            tempLine.remove();
+            tempLine = null;
+        }
+        
+        isDrawing = false;
+        drawingFromGroup = null;
+        drawingFromPort = null;
+        
+        resetAllPortsHighlight();
+        hideAllPorts();
+    };
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
+function showAllPorts() {
+    const allBlocks = mainLayer.querySelectorAll('g[data-type]');
+    allBlocks.forEach(block => {
+        const ports = block.querySelectorAll('.connection-port');
+        ports.forEach(p => { p.style.display = 'block'; });
+    });
+}
+
+function hideAllPorts() {
+    const allBlocks = mainLayer.querySelectorAll('g[data-type]');
+    allBlocks.forEach(block => {
+        const ports = block.querySelectorAll('.connection-port');
+        ports.forEach(p => { p.style.display = 'none'; });
+    });
+}
+
+function highlightPortUnderCursor(clientX, clientY) {
+    // Сначала сбрасываем все
+    resetAllPortsHighlight();
+    
+    const port = findPortAtPosition(clientX, clientY);
+    if (port) {
+        port.setAttribute('fill', '#10b981');
+        port.setAttribute('r', '7');
+    }
+}
+
+function findPortAtPosition(clientX, clientY) {
+    const allPorts = document.querySelectorAll('.connection-port');
+    for (const port of allPorts) {
+        if (port.style.display !== 'none') {
+            const rect = port.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const distance = Math.sqrt((clientX - cx) ** 2 + (clientY - cy) ** 2);
+            
+            if (distance <= 10) {
+                return port;
+            }
+        }
+    }
+    return null;
+}
+
+function resetAllPortsHighlight() {
+    const allPorts = document.querySelectorAll('.connection-port');
+    allPorts.forEach(port => {
+        port.setAttribute('fill', '#3b82f6');
+        port.setAttribute('r', '5');
+    });
+}
+
+
+let connections = [];
+let connectionCounter = 0;
+let connectionsLayer = null;
+
+function getConnectionsLayer() {
+    if (!connectionsLayer) {
+        const ns = "http://www.w3.org/2000/svg";
+        connectionsLayer = document.getElementById('connections-layer');
+        if (!connectionsLayer) {
+            connectionsLayer = document.createElementNS(ns, "g");
+            connectionsLayer.setAttribute('id', 'connections-layer');
+            svg.insertBefore(connectionsLayer, mainLayer);
+        }
+    }
+    return connectionsLayer;
+}
+
+function createConnection(fromGroup, fromPort, toGroup, toPort, freeEndX, freeEndY) {
+    const ns = "http://www.w3.org/2000/svg";
+    const layer = getConnectionsLayer();
+    
+    // Даем блокам ID, если их нет
+    if (!fromGroup.getAttribute('data-id')) {
+        fromGroup.setAttribute('data-id', 'block_' + Math.random().toString(36).substr(2, 9));
+    }
+    
+    const fromBlockId = fromGroup.getAttribute('data-id');
+    
+    let toBlockId = null;
+    if (toGroup) {
+        if (!toGroup.getAttribute('data-id')) {
+            toGroup.setAttribute('data-id', 'block_' + Math.random().toString(36).substr(2, 9));
+        }
+        toBlockId = toGroup.getAttribute('data-id');
+    }
+    
+    const connection = {
+        id: 'conn_' + (++connectionCounter),
+        fromBlockId: fromBlockId,
+        fromPort: fromPort,
+        toBlockId: toBlockId,
+        toPort: toPort,
+        freeEndX: freeEndX,
+        freeEndY: freeEndY
+    };
+    
+    connections.push(connection);
+    emitEvent('conn:create', { connection });
+    drawConnection(connection);
+    console.log('Создано соединение:', connection);
+}
+
+function selectConnection(group, path) {
+    group.classList.add('selected-block');
+    selectedBlocks.add(group);
+    path.setAttribute('stroke', '#0066cc');
+    path.setAttribute('stroke-width', '3');
+}
+
+function drawConnection(connection) {
+    const ns = "http://www.w3.org/2000/svg";
+    const layer = getConnectionsLayer();
+    
+    const fromGroup = mainLayer.querySelector(`[data-id="${connection.fromBlockId}"]`);
+    if (!fromGroup) return;
+    
+    // Получаем начальную точку
+    const fromPortCircle = fromGroup.querySelector(`[data-port="${connection.fromPort}"]`);
+    const fromTransform = fromGroup.getAttribute('transform');
+    const fromMatch = fromTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+    const fromBlockX = fromMatch ? parseFloat(fromMatch[1]) : 0;
+    const fromBlockY = fromMatch ? parseFloat(fromMatch[2]) : 0;
+    const fromX = fromBlockX + parseFloat(fromPortCircle.getAttribute('cx'));
+    const fromY = fromBlockY + parseFloat(fromPortCircle.getAttribute('cy'));
+    
+    let toX, toY, toPort = null;
+    
+    if (connection.toBlockId) {
+        const toGroup = mainLayer.querySelector(`[data-id="${connection.toBlockId}"]`);
+        if (!toGroup) return;
+        const toPortCircle = toGroup.querySelector(`[data-port="${connection.toPort}"]`);
+        const toTransform = toGroup.getAttribute('transform');
+        const toMatch = toTransform.match(/translate\(([^,]+),\s*([^)]+)\)/);
+        const toBlockX = toMatch ? parseFloat(toMatch[1]) : 0;
+        const toBlockY = toMatch ? parseFloat(toMatch[2]) : 0;
+        toX = toBlockX + parseFloat(toPortCircle.getAttribute('cx'));
+        toY = toBlockY + parseFloat(toPortCircle.getAttribute('cy'));
+        toPort = connection.toPort;
+    } else {
+        toX = connection.freeEndX;
+        toY = connection.freeEndY;
+    }
+    
+    // Удаляем старую линию, если есть
+    const existing = layer.querySelector(`[data-connection-id="${connection.id}"]`);
+    if (existing) existing.remove();
+    
+    // Создаем группу для соединения
+    const group = document.createElementNS(ns, "g");
+    group.setAttribute('data-connection-id', connection.id);
+    group.classList.add('connection-group');
+    
+    // Строим ортогональный путь
+    const fromPort = connection.fromPort;
+    const pathData = buildOrthogonalPath(fromX, fromY, toX, toY, fromPort, toPort);
+    
+    // Определяем, нужна ли стрелка (последний сегмент идет справа налево или снизу вверх)
+    const needsArrow = checkNeedsArrow(fromX, fromY, toX, toY, fromPort, toPort);
+    
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute('d', pathData);
+    path.setAttribute('stroke', '#1a1a1a');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('fill', 'none');
+    
+    // Добавляем стрелку только если нужно
+    if (needsArrow) {
+        const arrowId = 'arrow_' + connection.id;
+        let defs = svg.querySelector('defs');
+        if (!defs) {
+            defs = document.createElementNS(ns, "defs");
+            svg.insertBefore(defs, svg.firstChild);
+        }
+        
+        const oldMarker = defs.querySelector(`#${arrowId}`);
+        if (oldMarker) oldMarker.remove();
+        
+        const marker = document.createElementNS(ns, "marker");
+        marker.setAttribute('id', arrowId);
+        marker.setAttribute('markerWidth', '10');
+        marker.setAttribute('markerHeight', '10');
+        marker.setAttribute('refX', '9');
+        marker.setAttribute('refY', '3');
+        marker.setAttribute('orient', 'auto');
+        marker.innerHTML = '<polygon points="0 0, 10 3, 0 6" fill="#1a1a1a" />';
+        defs.appendChild(marker);
+        
+        path.setAttribute('marker-end', `url(#${arrowId})`);
+    }
+    
+    group.appendChild(path);
+
+    path.style.cursor = 'pointer';
+    path.setAttribute('stroke-width', '2');
+    
+    path.addEventListener('click', (e) => {
+        e.preventDefault();
+        
+        if (e.ctrlKey || e.metaKey) {
+            if (selectedBlocks.has(group)) {
+                group.classList.remove('selected-block');
+                selectedBlocks.delete(group);
+                path.setAttribute('stroke', '#1a1a1a');
+                path.setAttribute('stroke-width', '2');
+            } else {
+                selectConnection(group, path);
+            }
+        } else {
+            clearSelection();
+            selectConnection(group, path);
+        }
+    });
+
+
+        // ОТЛАДКА: проверим, кликабельна ли группа
+    group.addEventListener('mousedown', (e) => {
+        console.log('mousedown на group соединения', connection.id);
+    });
+    
+    path.addEventListener('mousedown', (e) => {
+        console.log('mousedown на path соединения', connection.id);
+    });
+
+
+    layer.appendChild(group);
+}
+
+function buildOrthogonalPath(x1, y1, x2, y2, fromPort, toPort) {
+    const offset = 30;
+    
+    // Точка выхода из порта
+    let ex = x1, ey = y1;
+    switch(fromPort) {
+        case 'top':    ey = y1 - offset; break;
+        case 'bottom': ey = y1 + offset; break;
+        case 'left':   ex = x1 - offset; break;
+        case 'right':  ex = x1 + offset; break;
+    }
+    
+    // Точка входа в порт
+    let ix = x2, iy = y2;
+    if (toPort) {
+        switch(toPort) {
+            case 'top':    iy = y2 - offset; break;
+            case 'bottom': iy = y2 + offset; break;
+            case 'left':   ix = x2 - offset; break;
+            case 'right':  ix = x2 + offset; break;
+        }
+    }
+    
+    let path = `M ${x1} ${y1} `;
+    
+    if (!toPort) {
+        // Свободный конец
+        if (fromPort === 'top' || fromPort === 'bottom') {
+            // Выход вертикально, потом горизонтально до цели
+            path += `L ${x1} ${ey} L ${x2} ${ey} L ${x2} ${y2}`;
+        } else {
+            // Выход горизонтально, потом вертикально до цели
+            path += `L ${ex} ${y1} L ${ex} ${y2} L ${x2} ${y2}`;
+        }
+    } else {
+        const fromVert = (fromPort === 'top' || fromPort === 'bottom');
+        const toVert = (toPort === 'top' || toPort === 'bottom');
+        
+        if (fromVert && toVert) {
+            const midY = (ey + iy) / 2;
+            path += `L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${iy} `;
+        } else if (!fromVert && !toVert) {
+            const midX = (ex + ix) / 2;
+            path += `L ${midX} ${y1} L ${midX} ${y2} L ${ix} ${y2} `;
+        } else {
+            path += `L ${ex} ${ey} L ${ix} ${iy} `;
+        }
+        
+        path += `L ${x2} ${y2}`;
+    }
+    
+    return path;
+}
+
+function checkNeedsArrow(x1, y1, x2, y2, fromPort, toPort) {
+    // Простая проверка: стрелка нужна если конечная точка левее или выше начальной
+    return (x2 < x1) || (y2 < y1);
+}
+
+function updateAllConnections() {
+    connections.forEach(conn => drawConnection(conn))
+}
+
+const style = document.createElement('style');
+style.textContent = `
+    .connection-group.selected-block path {
+        stroke: #0066cc !important;
+        stroke-width: 3 !important;
+    }
+    .connection-group:hover path {
+        stroke: #3b82f6;
+    }
+`;
+document.head.appendChild(style);
+
+//#endregion
+
+//#region Сокет — совместное редактирование
+
+const socket = io();
+const urlParamsSocket = new URLSearchParams(window.location.search);
+const roomId = urlParamsSocket.get('room') || null;
+
+let isApplyingRemote = false;
+let myRole = 'viewer'; // будет обновлено при подключении
+let ownerId = null;
+const myUserId = localStorage.getItem('userid');
+const myUsername = localStorage.getItem('username') || 'Гость';
+
+function emitEvent(type, payload) {
+    if (isApplyingRemote) return;
+    if (!roomId) return;
+    if (myRole !== 'editor' && myRole !== 'owner') return; // только редакторы
+    socket.emit('editor:event', { type, payload });
+}
+
+function canEdit() {
+    if (!roomId) return true; // не в сессии — можно всё
+    return myRole === 'editor' || myRole === 'owner';
+}
+
+// --- Хотбар ---
+
+function initHotbar() {
+    const hotbar = document.getElementById('hotbar');
+    hotbar.style.display = 'flex';
+
+    document.getElementById('hotbarSessionId').textContent = roomId;
+
+    document.getElementById('hotbarCopyBtn').addEventListener('click', () => {
+        navigator.clipboard.writeText(roomId);
+        const btn = document.getElementById('hotbarCopyBtn');
+        btn.textContent = 'Скопировано!';
+        setTimeout(() => btn.textContent = 'Скопировать', 1500);
+    });
+}
+
+function renderUsers(users) {
+    const container = document.getElementById('hotbarUsers');
+    container.innerHTML = '';
+
+    users.forEach(user => {
+        const isMe = user.userId === myUserId;
+        const isOwnerMe = myUserId === ownerId;
+
+        const card = document.createElement('div');
+        card.className = 'hotbar-user';
+        card.id = 'hotbar-user-' + user.userId;
+
+        const dot = document.createElement('div');
+        dot.className = `hotbar-user-dot ${user.role}`;
+
+        const name = document.createElement('span');
+        name.className = 'hotbar-user-name';
+        name.textContent = user.username + (isMe ? ' (вы)' : '');
+
+        card.appendChild(dot);
+        card.appendChild(name);
+
+        // Если я владелец и это не я — показываю селект роли
+        if (isOwnerMe && user.role !== 'owner') {
+            const select = document.createElement('select');
+            select.className = 'hotbar-role-select';
+            select.innerHTML = `
+                <option value="viewer" ${user.role === 'viewer' ? 'selected' : ''}>Читатель</option>
+                <option value="editor" ${user.role === 'editor' ? 'selected' : ''}>Редактор</option>
+            `;
+            select.addEventListener('change', () => {
+                socket.emit('room:set_role', {
+                    targetUserId: user.userId,
+                    role: select.value
+                });
+            });
+            card.appendChild(select);
+        } else if (user.role !== 'owner') {
+            // Просто бейдж роли
+            const badge = document.createElement('span');
+            badge.className = `hotbar-role-badge ${user.role}`;
+            badge.textContent = user.role === 'editor' ? 'Редактор' : 'Читатель';
+            badge.id = `role-badge-${user.userId}`;
+            card.appendChild(badge);
+        }
+
+        container.appendChild(card);
+    });
+}
+
+function updateUserRole(userId, role) {
+    // Обновляем точку
+    const card = document.getElementById('hotbar-user-' + userId);
+    if (!card) return;
+    const dot = card.querySelector('.hotbar-user-dot');
+    if (dot) dot.className = `hotbar-user-dot ${role}`;
+
+    // Обновляем бейдж (для не-владельца)
+    const badge = document.getElementById(`role-badge-${userId}`);
+    if (badge) {
+        badge.className = `hotbar-role-badge ${role}`;
+        badge.textContent = role === 'editor' ? 'Редактор' : 'Читатель';
+    }
+
+    // Если это я — обновляем myRole
+    if (userId === myUserId) {
+        myRole = role;
+        updateEditingUI();
+    }
+}
+
+function updateEditingUI() {
+    // Блокируем/разблокируем сайдбар если нет прав
+    const sidebar = document.querySelector('.element-list');
+    if (!canEdit()) {
+        sidebar.style.opacity = '0.4';
+        sidebar.style.pointerEvents = 'none';
+    } else {
+        sidebar.style.opacity = '1';
+        sidebar.style.pointerEvents = 'auto';
+    }
+}
+
+// --- Подключение ---
+
+if (roomId) {
+    socket.on('connect', () => {
+        socket.emit('room:join', {
+            roomId,
+            userId: myUserId,
+            username: myUsername
+        });
+        initHotbar();
+    });
+
+    // Получаем полный список при входе
+    socket.on('room:init', ({ ownerId: ownerIdFromServer, users }) => {
+        ownerId = ownerIdFromServer;
+        const me = users.find(u => u.userId === myUserId);
+        if (me) myRole = me.role;
+        renderUsers(users);
+        updateEditingUI();
+    });
+
+    // Кто-то вошёл
+    socket.on('room:user_joined', ({ userId, username, role }) => {
+        const container = document.getElementById('hotbarUsers');
+        // Перерисовываем — проще всего запросить актуальный список
+        // Но у нас нет эндпоинта, поэтому добавляем вручную
+        const existing = document.getElementById('hotbar-user-' + userId);
+        if (!existing) {
+            renderUsers([...getCurrentUsers(), { userId, username, role }]);
+        }
+    });
+
+    // Кто-то вышел
+    socket.on('room:user_left', ({ userId }) => {
+        const card = document.getElementById('hotbar-user-' + userId);
+        if (card) card.remove();
+    });
+
+    // Роль изменена
+    socket.on('room:role_changed', ({ userId, role }) => {
+        updateUserRole(userId, role);
+    });
+
+    // Событие редактирования
+    socket.on('editor:event', (event) => {
+        isApplyingRemote = true;
+        applyRemoteEvent(event);
+        isApplyingRemote = false;
+    });
+}
+
+// Вспомогательная — собрать текущих юзеров из DOM
+function getCurrentUsers() {
+    const cards = document.querySelectorAll('.hotbar-user');
+    return Array.from(cards).map(card => ({
+        userId: card.id.replace('hotbar-user-', ''),
+        username: card.querySelector('.hotbar-user-name').textContent.replace(' (вы)', ''),
+        role: card.querySelector('.hotbar-user-dot').classList[1]
+    }));
+}
+
+// Кнопка запуска сессии
+window.addEventListener('load', () => {
+    const startBtn = document.getElementById('startSessionBtn');
+    if (!startBtn) return;
+
+    if (roomId) {
+        startBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+            <span>ID: ${roomId}</span>
+        `;
+        startBtn.style.color = '#10b981';
+        startBtn.style.borderColor = '#10b981';
+        startBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(roomId);
+            startBtn.querySelector('span').textContent = 'Скопировано!';
+            setTimeout(() => startBtn.querySelector('span').textContent = `ID: ${roomId}`, 1500);
+        });
+        return;
+    }
+
+    startBtn.addEventListener('click', () => {
+        const newRoomId = Math.random().toString(36).substr(2, 8).toUpperCase();
+        const flowchartId = currentFlowchartId ? `&id=${currentFlowchartId}` : '';
+        window.location.href = `editor.html?room=${newRoomId}${flowchartId}`;
+    });
+});
+
+// Применяем чужое событие
+function applyRemoteEvent({ type, payload }) {
+    switch (type) {
+        case 'block:create':
+            createNode(payload.blockType, payload.x, payload.y);
+            const allGroups = mainLayer.querySelectorAll('g[data-type]');
+            const newBlock = allGroups[allGroups.length - 1];
+            newBlock.setAttribute('data-id', payload.blockId);
+            break;
+
+        case 'block:move': {
+            const block = mainLayer.querySelector(`[data-id="${payload.blockId}"]`);
+            if (block) block.setAttribute('transform', `translate(${payload.x}, ${payload.y})`);
+            updateAllConnections();
+            break;
+        }
+
+        case 'block:resize': {
+            const block = mainLayer.querySelector(`[data-id="${payload.blockId}"]`);
+            if (!block) break;
+            const shape = block.querySelector('rect, polygon, ellipse');
+            if (!shape) break;
+            const type = block.getAttribute('data-type');
+            if (type === 'decision' || type === 'data') {
+                shape.setAttribute('points', payload.points);
+            } else if (type === 'connector') {
+                shape.setAttribute('rx', payload.rx); shape.setAttribute('ry', payload.ry);
+                shape.setAttribute('cx', payload.cx); shape.setAttribute('cy', payload.cy);
+            } else {
+                shape.setAttribute('x', payload.x); shape.setAttribute('y', payload.y);
+                shape.setAttribute('width', payload.width); shape.setAttribute('height', payload.height);
+                if (type === 'terminal') shape.setAttribute('rx', payload.rx);
+            }
+            updateHandlesPosition(block, payload.hx, payload.hy, payload.hw, payload.hh);
+            updatePortsPosition(block);
+            updateAllConnections();
+            break;
+        }
+
+        case 'block:text': {
+            const block = mainLayer.querySelector(`[data-id="${payload.blockId}"]`);
+            if (block) {
+                const text = block.querySelector('text');
+                if (text) text.textContent = payload.text;
+            }
+            break;
+        }
+
+        case 'block:delete':
+            payload.blockIds.forEach(id => {
+                const block = mainLayer.querySelector(`[data-id="${id}"]`);
+                if (block) block.remove();
+                removeConnectionsForBlock(id);
+            });
+            break;
+
+        case 'conn:create':
+            connections.push(payload.connection);
+            drawConnection(payload.connection);
+            break;
+
+        case 'conn:delete': {
+            const connEl = document.querySelector(`[data-connection-id="${payload.connId}"]`);
+            if (connEl) connEl.remove();
+            connections = connections.filter(c => c.id !== payload.connId);
+            break;
+        }
+    }
+}
+
+//#endregion

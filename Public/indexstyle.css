@@ -1,0 +1,117 @@
+.auth-page{
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 70vh;      
+    background-color: #f0f2f5; 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.auth-container{
+    background: rgb(255, 255, 255);
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); 
+    max-width: 300px;
+    width: 100%;
+    text-align: center; 
+    box-sizing: border-box;
+}
+
+
+h2 { margin-top: 0; color: #333; }
+p { color: #666; font-size: 14px; }
+
+button:not(.no-style){
+    margin-bottom: 16px;
+    width: 100%;
+    background: transparent;
+    color: #333;
+    padding: 10px 20px;
+    border: 1px solid #333; 
+    border-radius: 0;       
+    font-size: 14px;
+    letter-spacing: 1px;   
+    cursor: pointer;
+
+    transition: all 0.2s ease-in-out;
+    position: relative;
+}
+
+.btn:hover,
+button:not(.no-style):hover {
+  background: #333;      
+  color: #fff;
+}
+
+.btn:active,
+button:not(.no-style):active {
+  background: #000;
+  transform: translateY(2px);
+}
+
+.input-group input {
+    width: 100%;
+    padding: 14px 10px;
+    margin-bottom: 16px;
+    border: 1px solid #333;
+    border-radius: 0;          
+    background: transparent;   
+    font-size: 14px;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+    color: #111;
+}
+
+.auth-container input:focus {
+    outline: none;
+    background: #333;
+    color: white;
+    border-color: #333;
+}
+
+.auth-container .text-block {
+    border: 1px solid #333;
+    padding: 10px 12px;
+    margin: 15px 0;
+    background: transparent;
+    font-size: 14px;
+    text-align: left;
+    color: #222;
+    letter-spacing: 0.3px;
+}
+
+.back-link {
+    display: inline-block;
+    color: #474747;             
+    text-decoration: none;   
+    font-size: 12px;
+    letter-spacing: 1px;
+    transition: color 0.3s ease;
+}
+.back-link:hover { color: #000; }
+
+#extra-fields {
+    overflow: hidden;
+    transition: max-height 0.8s ease-in-out,
+                opacity 0.6s ease-in-out,
+                margin-top 0.8s ease-in-out;
+}
+
+#extra-fields .input-group:last-child {
+    margin-bottom: 0;
+}
+
+/* Медленное появление полей внутри */
+#extra-fields .input-group input {
+    opacity: 1;
+    transition: all 0.5s ease;
+}
+
+@media (min-width: 2500px){
+    .auth-container{
+        zoom: 2;
+    }
+}
