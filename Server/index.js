@@ -30,14 +30,25 @@ const rooms = new Map();
 io.on('connection', (socket) => {
     console.log('Клиент подключился:', socket.id);
 
-    socket.on('room:join', ({ roomId, userId, username }) => {
+    // Проверка существования комнаты (до join)
+    socket.on('room:check', ({ roomId }, callback) => {
+        callback({ exists: rooms.has(roomId) });
+    });
+
+    socket.on('room:join', ({ roomId, userId, username, isCreating }) => {
+        // Если не создатель — проверяем что комната существует
+        if (!isCreating && !rooms.has(roomId)) {
+            socket.emit('room:not_found');
+            return;
+        }
+
         socket.join(roomId);
         socket.roomId = roomId;
         socket.userId = userId;
         socket.username = username;
 
         if (!rooms.has(roomId)) {
-            // Первый вошедший — владелец
+            // Первый вошедший — владелец (создатель)
             rooms.set(roomId, { ownerId: userId, users: new Map() });
         }
 
@@ -100,6 +111,34 @@ io.on('connection', (socket) => {
         if (!user || (user.role !== 'editor' && user.role !== 'owner')) return;
 
         socket.to(socket.roomId).emit('editor:event', event);
+    });
+
+    // Курсор мыши — транслируем всем в комнате (без ограничений по роли — видеть можно всем)
+    socket.on('cursor:move', ({ x, y }) => {
+        if (!socket.roomId) return;
+        socket.to(socket.roomId).emit('cursor:move', {
+            userId: socket.userId,
+            username: socket.username,
+            x, y
+        });
+    });
+
+    // Live-перемещение блока во время drag (не финальное)
+    socket.on('block:live_move', (payload) => {
+        const room = rooms.get(socket.roomId);
+        if (!room) return;
+        const user = room.users.get(socket.id);
+        if (!user || (user.role !== 'editor' && user.role !== 'owner')) return;
+        socket.to(socket.roomId).emit('block:live_move', payload);
+    });
+
+    // Live-ресайз блока во время тащения ручки (не финальное)
+    socket.on('block:live_resize', (payload) => {
+        const room = rooms.get(socket.roomId);
+        if (!room) return;
+        const user = room.users.get(socket.id);
+        if (!user || (user.role !== 'editor' && user.role !== 'owner')) return;
+        socket.to(socket.roomId).emit('block:live_resize', payload);
     });
 
     socket.on('disconnect', () => {

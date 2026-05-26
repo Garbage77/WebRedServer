@@ -33,7 +33,7 @@ router.post('/', async (req, res) => {
     );
     res.json({ ok: true, flowchartId: result.rows[0].id });
   } catch (e) {
-    console.log('❌ Ошибка сохранения:', e.message);
+    console.log('Ошибка сохранения:', e.message);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -49,7 +49,7 @@ router.put('/:id', async (req, res) => {
     );
     res.json({ ok: true });
   } catch (e) {
-    console.log('❌ Ошибка обновления:', e.message);
+    console.log('Ошибка обновления:', e.message);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });

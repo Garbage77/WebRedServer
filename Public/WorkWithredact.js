@@ -384,7 +384,17 @@ function makeDraggable(group) {
                 hasMoved = true;
             }
             
-            group.setAttribute('transform', `translate(${originalX + dx}, ${originalY + dy})`);
+            const newX = originalX + dx;
+            const newY = originalY + dy;
+            group.setAttribute('transform', `translate(${newX}, ${newY})`);
+
+            // Транслируем live-позицию другим участникам
+            if (roomId && !isApplyingRemote && (myRole === 'editor' || myRole === 'owner')) {
+                socket.emit('block:live_move', {
+                    blockId: group.getAttribute('data-id'),
+                    x: newX, y: newY
+                });
+            }
         };
         
         const onMouseUp = () => {
@@ -736,7 +746,22 @@ function startResize(group, direction, startEvent) {
         
         // Обновляем маркеры
         updateHandlesPosition(group, newX, newY, newWidth, newHeight);
-        updatePortsPosition(group)
+        updatePortsPosition(group);
+
+        // Транслируем live-ресайз
+        if (roomId && !isApplyingRemote && (myRole === 'editor' || myRole === 'owner')) {
+            const shape2 = group.querySelector('rect, polygon, ellipse');
+            socket.emit('block:live_resize', {
+                blockId: group.getAttribute('data-id'),
+                type: group.getAttribute('data-type'),
+                points: shape2.getAttribute('points'),
+                rx: shape2.getAttribute('rx'), ry: shape2.getAttribute('ry'),
+                cx: shape2.getAttribute('cx'), cy: shape2.getAttribute('cy'),
+                x: shape2.getAttribute('x'),  y: shape2.getAttribute('y'),
+                width: shape2.getAttribute('width'), height: shape2.getAttribute('height'),
+                hx: newX, hy: newY, hw: newWidth, hh: newHeight
+            });
+        }
     };
     
     const onMouseUp = () => {
@@ -1605,6 +1630,22 @@ function emitEvent(type, payload) {
     socket.emit('editor:event', { type, payload });
 }
 
+// --- Трансляция курсора ---
+if (roomId) {
+    let cursorThrottle = 0;
+    svg.addEventListener('mousemove', (e) => {
+        const now = Date.now();
+        if (now - cursorThrottle < 30) return; // ~30fps
+        cursorThrottle = now;
+
+        const rect = svg.getBoundingClientRect();
+        const canvasArea = document.querySelector('.canvas-area');
+        const x = e.clientX - rect.left + canvasArea.scrollLeft;
+        const y = e.clientY - rect.top + canvasArea.scrollTop;
+        socket.emit('cursor:move', { x, y });
+    });
+}
+
 function canEdit() {
     if (!roomId) return true; // не в сессии — можно всё
     return myRole === 'editor' || myRole === 'owner';
@@ -1713,13 +1754,59 @@ function updateEditingUI() {
 
 if (roomId) {
     socket.on('connect', () => {
+        // Если roomId пришёл из кнопки "Создать" — мы создатели
+        // Если из поля ввода на MainMenu — мы гости, надо проверить что комната есть
+        const isCreating = urlParamsSocket.get('creating') === '1';
+
+        if (!isCreating) {
+            // Сначала проверяем — вдруг комнаты нет
+            socket.emit('room:check', { roomId }, ({ exists }) => {
+                if (!exists) {
+                    showRoomNotFound();
+                    return;
+                }
+                joinRoom();
+            });
+        } else {
+            joinRoom();
+        }
+    });
+
+    function joinRoom() {
+        const isCreating = urlParamsSocket.get('creating') === '1';
         socket.emit('room:join', {
             roomId,
             userId: myUserId,
-            username: myUsername
+            username: myUsername,
+            isCreating
         });
         initHotbar();
+    }
+
+    socket.on('room:not_found', () => {
+        showRoomNotFound();
     });
+
+    function showRoomNotFound() {
+        // Показываем красивое сообщение и редиректим
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position:fixed;top:0;left:0;width:100%;height:100%;
+            background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);
+            display:flex;align-items:center;justify-content:center;z-index:9999;
+        `;
+        overlay.innerHTML = `
+            <div style="background:#fff;padding:36px 32px;max-width:320px;width:100%;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.15);">
+                <div style="font-size:32px;margin-bottom:12px;">🔍</div>
+                <h3 style="margin:0 0 10px;font-size:17px;letter-spacing:1px;text-transform:uppercase;">Комната не найдена</h3>
+                <div style="border:1px solid #333;padding:10px 12px;margin-bottom:20px;font-size:13px;text-align:left;color:#555;line-height:1.5;">
+                    Сессия с кодом <strong>${roomId}</strong> не существует.<br>Проверьте код или создайте новую схему.
+                </div>
+                <button onclick="window.location.href='/MainMenu.html'" style="width:100%;padding:11px;background:transparent;border:1px solid #333;font-size:14px;letter-spacing:1px;cursor:pointer;transition:0.2s;" onmouseover="this.style.background='#333';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#333'">← Вернуться в меню</button>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    }
 
     // Получаем полный список при входе
     socket.on('room:init', ({ ownerId: ownerIdFromServer, users }) => {
@@ -1759,6 +1846,8 @@ if (roomId) {
     socket.on('room:user_left', ({ userId }) => {
         const card = document.getElementById('hotbar-user-' + userId);
         if (card) card.remove();
+        // Убираем курсор ушедшего
+        removeCursor(userId);
     });
 
     // Роль изменена
@@ -1770,6 +1859,27 @@ if (roomId) {
     socket.on('editor:event', (event) => {
         isApplyingRemote = true;
         applyRemoteEvent(event);
+        isApplyingRemote = false;
+    });
+
+    // --- Курсоры участников ---
+    socket.on('cursor:move', ({ userId, username, x, y }) => {
+        renderCursor(userId, username, x, y);
+    });
+
+    // --- Live перемещение блока ---
+    socket.on('block:live_move', ({ blockId, x, y }) => {
+        const block = mainLayer.querySelector(`[data-id="${blockId}"]`);
+        if (block) {
+            block.setAttribute('transform', `translate(${x}, ${y})`);
+            updateAllConnections();
+        }
+    });
+
+    // --- Live ресайз блока ---
+    socket.on('block:live_resize', (payload) => {
+        isApplyingRemote = true;
+        applyRemoteEvent({ type: 'block:resize', payload });
         isApplyingRemote = false;
     });
 }
@@ -1811,9 +1921,115 @@ window.addEventListener('load', () => {
     startBtn.addEventListener('click', () => {
         const newRoomId = Math.random().toString(36).substr(2, 8).toUpperCase();
         const flowchartId = currentFlowchartId ? `&id=${currentFlowchartId}` : '';
-        window.location.href = `editor.html?room=${newRoomId}${flowchartId}`;
+        window.location.href = `editor.html?room=${newRoomId}&creating=1${flowchartId}`;
     });
 });
+
+// --- Система курсоров участников ---
+
+const CURSOR_COLORS = [
+    '#6366f1', // индиго
+    '#10b981', // зелёный
+    '#f59e0b', // жёлтый
+    '#ef4444', // красный
+    '#8b5cf6', // фиолетовый
+    '#06b6d4', // голубой
+    '#f97316', // оранжевый
+];
+const userColorMap = new Map(); // userId -> color
+let colorIndex = 0;
+
+function getUserColor(userId) {
+    if (!userColorMap.has(userId)) {
+        userColorMap.set(userId, CURSOR_COLORS[colorIndex % CURSOR_COLORS.length]);
+        colorIndex++;
+    }
+    return userColorMap.get(userId);
+}
+
+// Курсоры рисуем прямо в SVG чтобы они двигались вместе с холстом
+let cursorsLayer = null;
+function getCursorsLayer() {
+    if (!cursorsLayer) {
+        const ns = "http://www.w3.org/2000/svg";
+        cursorsLayer = document.createElementNS(ns, "g");
+        cursorsLayer.setAttribute('id', 'cursors-layer');
+        svg.appendChild(cursorsLayer); // поверх всего
+    }
+    return cursorsLayer;
+}
+
+function renderCursor(userId, username, x, y) {
+    const layer = getCursorsLayer();
+    const color = getUserColor(userId);
+    const existingId = 'cursor-' + userId;
+    let group = layer.querySelector('#' + existingId);
+
+    if (!group) {
+        // Создаём курсор
+        const ns = "http://www.w3.org/2000/svg";
+        group = document.createElementNS(ns, "g");
+        group.setAttribute('id', existingId);
+        group.style.pointerEvents = 'none';
+        group.style.transition = 'transform 0.06s linear'; // плавность
+
+        // SVG-стрелка курсора
+        const arrow = document.createElementNS(ns, "path");
+        arrow.setAttribute('d', 'M 0 0 L 0 14 L 3.5 10.5 L 6 16 L 8 15 L 5.5 9.5 L 10 9.5 Z');
+        arrow.setAttribute('fill', color);
+        arrow.setAttribute('stroke', '#fff');
+        arrow.setAttribute('stroke-width', '1.2');
+        arrow.setAttribute('stroke-linejoin', 'round');
+
+        // Бейдж с именем
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute('x', '12');
+        rect.setAttribute('y', '-4');
+        rect.setAttribute('rx', '3');
+        rect.setAttribute('height', '18');
+        rect.setAttribute('fill', color);
+
+        const text = document.createElementNS(ns, "text");
+        text.setAttribute('x', '16');
+        text.setAttribute('y', '9');
+        text.setAttribute('font-size', '10');
+        text.setAttribute('font-family', "'Inter', sans-serif");
+        text.setAttribute('fill', '#fff');
+        text.setAttribute('font-weight', '600');
+        text.textContent = username;
+
+        group.appendChild(arrow);
+        group.appendChild(rect);
+        group.appendChild(text);
+        layer.appendChild(group);
+
+        // Подгоняем ширину rect под текст после рендера
+        requestAnimationFrame(() => {
+            try {
+                const textWidth = text.getComputedTextLength();
+                rect.setAttribute('width', textWidth + 8);
+            } catch(e) {
+                rect.setAttribute('width', username.length * 6.5 + 8);
+            }
+        });
+    }
+
+    group.setAttribute('transform', `translate(${x}, ${y})`);
+
+    // Сбрасываем таймер исчезновения
+    clearTimeout(group._hideTimer);
+    group.style.opacity = '1';
+    group._hideTimer = setTimeout(() => {
+        group.style.transition = 'opacity 0.5s ease';
+        group.style.opacity = '0';
+    }, 3000); // исчезает через 3с без движения
+}
+
+function removeCursor(userId) {
+    const layer = getCursorsLayer();
+    const el = layer.querySelector('#cursor-' + userId);
+    if (el) el.remove();
+}
 
 // Применяем чужое событие
 function applyRemoteEvent({ type, payload }) {
