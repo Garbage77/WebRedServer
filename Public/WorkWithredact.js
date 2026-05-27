@@ -293,16 +293,31 @@ function makeTextEditable(group, type) {
 
 // Функция для редактирования текста
 function editText(group, textElement) {
-    const currentText = textElement.textContent;
+    const tspans = textElement.querySelectorAll('tspan');
+    const currentText = tspans.length > 0 
+        ? Array.from(tspans).map(tspan => tspan.textContent.trim()).join('\n')
+        : textElement.textContent;
     const groupRect = group.getBoundingClientRect();
 
+    textElement.style.visibility = 'hidden';
+    
     // Используем textarea для поддержки многострочного текста (Shift+Enter)
     const textarea = document.createElement('textarea');
     textarea.value = currentText;
+
+    textarea.value = currentText;
     textarea.style.position = 'fixed';
-    textarea.style.left = `${groupRect.left + groupRect.width / 2 - 60}px`;
-    textarea.style.top = `${groupRect.top + groupRect.height / 2 - 24}px`;
-    textarea.style.width = '120px';
+
+    const paddingOffset = 8; 
+    const dynamicWidth = Math.max(groupRect.width - paddingOffset * 2, 60); 
+    const dynamicHeight = Math.max(groupRect.height - paddingOffset * 2, 30);
+
+    textarea.style.left = `${groupRect.left + (groupRect.width - dynamicWidth) / 2}px`;
+    textarea.style.top = `${groupRect.top + (groupRect.height - dynamicHeight) / 2}px`;
+
+    textarea.style.width = `${dynamicWidth}px`;
+    textarea.style.minHeight = `${dynamicHeight}px`;
+
     textarea.style.minHeight = '48px';
     textarea.style.fontSize = '12px';
     textarea.style.fontFamily = "'Inter', sans-serif";
@@ -321,15 +336,28 @@ function editText(group, textElement) {
     document.body.appendChild(textarea);
     textarea.focus();
     textarea.select();
+    const initialHeight = 48;
+    const centerY = groupRect.top + groupRect.height / 2;
 
     // Авторастяжка по высоте
     const autoResize = () => {
         textarea.style.height = 'auto';
-        textarea.style.height = textarea.scrollHeight + 'px';
+        const newHeight = textarea.scrollHeight;
+        textarea.style.height = `${newHeight}px`;
+        textarea.style.top = `${centerY - newHeight / 2}px`;
     };
+    autoResize();
     textarea.addEventListener('input', autoResize);
 
     let saved = false;
+
+     const closeEditor = () => {
+        if (textarea.parentNode) {
+            textarea.parentNode.removeChild(textarea);
+        }
+        // Возвращаем видимость SVG-тексту в любом сценарии (сохранение или отмена)
+        textElement.style.visibility = 'visible';
+    };
 
     // Функция сохранения текста
     const saveText = () => {
@@ -347,7 +375,7 @@ function editText(group, textElement) {
         } else {
             textElement.textContent = currentText;
         }
-        document.body.removeChild(textarea);
+        closeEditor();
     };
 
     // Enter = сохранить, Shift+Enter = новая строка
@@ -358,11 +386,31 @@ function editText(group, textElement) {
         } else if (e.key === 'Escape') {
             saved = true;
             textElement.textContent = currentText;
-            document.body.removeChild(textarea);
+            closeEditor();
         }
     });
 
     textarea.addEventListener('blur', saveText);
+}
+
+// Вспомогательная функция для многострочного текста в SVG
+function setMultilineText(textEl, text) {
+    // Удаляем старые tspan'ы
+    while (textEl.firstChild) textEl.removeChild(textEl.firstChild);
+
+    const lines = text.split('\n');
+    const lineHeight = 14; // px
+    const totalHeight = lines.length * lineHeight;
+    const startDy = -((lines.length - 1) * lineHeight) / 2;
+
+    lines.forEach((line, i) => {
+        const ns = "http://www.w3.org/2000/svg";
+        const tspan = document.createElementNS(ns, 'tspan');
+        tspan.setAttribute('x', textEl.getAttribute('x') || '0');
+        tspan.setAttribute('dy', i === 0 ? `${startDy}` : `${lineHeight}`);
+        tspan.textContent = line || ' ';
+        textEl.appendChild(tspan);
+    });
 }
 
 // Функция для перемещения блоков на холсте
@@ -780,8 +828,21 @@ function startResize(group, direction, startEvent) {
 
         const text = group.querySelector('text');
         if (text) {
-            text.setAttribute('x', newX + newWidth / 2);
-            text.setAttribute('y', newY + newHeight / 2 + 5);
+            const textX = newX + newWidth / 2;
+            const textY = newY + newHeight / 2;
+
+            text.setAttribute('x', textX);
+            text.setAttribute('y', textY);
+            
+            // Настраиваем встроенное центрирование, если оно сбросилось
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('dominant-baseline', 'central');
+
+        
+            const tspans = text.querySelectorAll('tspan');
+            tspans.forEach(tspan => {
+                tspan.setAttribute('x', textX);
+            });
         }
         
         // Обновляем маркеры
