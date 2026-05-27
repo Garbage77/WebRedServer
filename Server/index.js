@@ -14,9 +14,6 @@ app.use(cors());
 app.use(express.json());
 
 
-
-
-// Раздаём твои HTML/CSS/JS файлы из папки public
 app.use(express.static(path.join(__dirname, '../public')));
 
 // API маршруты
@@ -24,7 +21,6 @@ app.use('/auth', authRoutes);
 app.use('/flowcharts', flowchartRoutes);
 
 
-// Хранилище комнат: roomId -> { ownerId, users: Map<socketId, {userId, username, role}> }
 const rooms = new Map();
 
 io.on('connection', (socket) => {
@@ -99,7 +95,6 @@ io.on('connection', (socket) => {
             }
         }
 
-        // Говорим всем обновить список
         io.to(socket.roomId).emit('room:role_changed', { userId: targetUserId, role });
     });
 
@@ -113,7 +108,6 @@ io.on('connection', (socket) => {
         socket.to(socket.roomId).emit('editor:event', event);
     });
 
-    // Курсор мыши — транслируем всем в комнате (без ограничений по роли — видеть можно всем)
     socket.on('cursor:move', ({ x, y }) => {
         if (!socket.roomId) return;
         socket.to(socket.roomId).emit('cursor:move', {
@@ -141,10 +135,56 @@ io.on('connection', (socket) => {
         socket.to(socket.roomId).emit('block:live_resize', payload);
     });
 
+    // Захват блока
+    socket.on('block:lock', ({ blockId }) => {
+        const room = rooms.get(socket.roomId);
+        if (!room) return;
+        const user = room.users.get(socket.id);
+        if (!user || (user.role !== 'editor' && user.role !== 'owner')) return;
+
+        if (!room.locks) room.locks = new Map();
+
+        // Блок уже занят другим — отклоняем
+        const existing = room.locks.get(blockId);
+        if (existing && existing.userId !== socket.userId) return;
+
+        room.locks.set(blockId, { userId: socket.userId, username: socket.username });
+
+        // Уведомляем всех в комнате (включая самого отправителя — для синхронизации)
+        io.to(socket.roomId).emit('block:locked', {
+            blockId,
+            userId: socket.userId,
+            username: socket.username
+        });
+    });
+
+    // Освобождение блока
+    socket.on('block:unlock', ({ blockId }) => {
+        const room = rooms.get(socket.roomId);
+        if (!room || !room.locks) return;
+
+        const lock = room.locks.get(blockId);
+        if (!lock || lock.userId !== socket.userId) return;
+
+        room.locks.delete(blockId);
+        io.to(socket.roomId).emit('block:unlocked', { blockId });
+    });
+
     socket.on('disconnect', () => {
         const room = rooms.get(socket.roomId);
         if (room) {
             room.users.delete(socket.id);
+
+            // Снимаем все блокировки этого пользователя
+            if (room.locks) {
+                for (const [blockId, lock] of room.locks) {
+                    if (lock.userId === socket.userId) {
+                        room.locks.delete(blockId);
+                        io.to(socket.roomId).emit('block:unlocked', { blockId });
+                    }
+                }
+            }
+
             socket.to(socket.roomId).emit('room:user_left', {
                 userId: socket.userId,
                 username: socket.username

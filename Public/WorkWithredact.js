@@ -358,10 +358,17 @@ function makeDraggable(group) {
         // Не перемещаем при двойном клике или если кликнули на текст
        if (e.target.tagName === 'text' || e.ctrlKey || e.metaKey) return;
         if (!canEdit()) return; // viewer не может двигать блоки
+
+        // Блок занят другим участником
+        if (isBlockLocked(group.getAttribute('data-id'))) return;
         
         e.stopPropagation();
         isDragging = true;
         hasMoved = false;
+
+        // Захватываем блок — сообщаем всем
+        const blockId = group.getAttribute('data-id');
+        if (roomId) socket.emit('block:lock', { blockId });
         
         // Получаем текущую позицию
         const transform = group.getAttribute('transform');
@@ -388,6 +395,9 @@ function makeDraggable(group) {
             const newY = originalY + dy;
             group.setAttribute('transform', `translate(${newX}, ${newY})`);
 
+            // Обновляем соединения локально в реальном времени
+            updateAllConnections();
+
             // Транслируем live-позицию другим участникам
             if (roomId && !isApplyingRemote && (myRole === 'editor' || myRole === 'owner')) {
                 socket.emit('block:live_move', {
@@ -402,7 +412,12 @@ function makeDraggable(group) {
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
             updateAllConnections();
-            saveFlowchart(); 
+            saveFlowchart();
+
+            // Освобождаем блок
+            const blockId = group.getAttribute('data-id');
+            if (roomId) socket.emit('block:unlock', { blockId });
+
             const match2 = group.getAttribute('transform').match(/translate\(([^,]+),\s*([^)]+)\)/);
             emitEvent('block:move', {
             blockId: group.getAttribute('data-id'),
@@ -605,6 +620,7 @@ function addResizeHandles(group) {
         rect.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             if (!canEdit()) return; // viewer не может ресайзить
+            if (isBlockLocked(group.getAttribute('data-id'))) return;
             startResize(group, handle.dir, e);
         });
         
@@ -617,6 +633,9 @@ function addResizeHandles(group) {
 function startResize(group, direction, startEvent) {
     startEvent.stopPropagation();
     startEvent.preventDefault();
+
+    const blockId = group.getAttribute('data-id');
+    if (roomId) socket.emit('block:lock', { blockId });
     
     const startX = startEvent.clientX;
     const startY = startEvent.clientY;
@@ -748,6 +767,8 @@ function startResize(group, direction, startEvent) {
         updateHandlesPosition(group, newX, newY, newWidth, newHeight);
         updatePortsPosition(group);
 
+
+        updateAllConnections();
         // Транслируем live-ресайз
         if (roomId && !isApplyingRemote && (myRole === 'editor' || myRole === 'owner')) {
             const shape2 = group.querySelector('rect, polygon, ellipse');
@@ -768,6 +789,10 @@ function startResize(group, direction, startEvent) {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
         saveFlowchart();
+
+        // Освобождаем блок
+        if (roomId) socket.emit('block:unlock', { blockId });
+
         const shape2 = group.querySelector('rect, polygon, ellipse');
         const bbox2 = shape2.getBBox();
         emitEvent('block:resize', {
@@ -1606,6 +1631,17 @@ style.textContent = `
     .connection-group:hover path {
         stroke: #3b82f6;
     }
+
+    /* Заблокированный блок — визуальная индикация */
+    .block-locked {
+        cursor: not-allowed !important;
+    }
+    .block-locked * {
+        cursor: not-allowed !important;
+    }
+    .block-lock-overlay {
+        pointer-events: none;
+    }
 `;
 document.head.appendChild(style);
 
@@ -1616,6 +1652,94 @@ document.head.appendChild(style);
 const socket = io();
 const urlParamsSocket = new URLSearchParams(window.location.search);
 const roomId = urlParamsSocket.get('room') || null;
+
+// Блокировки: blockId -> { userId, username, color }
+const lockedBlocks = new Map();
+
+function isBlockLocked(blockId) {
+    const lock = lockedBlocks.get(blockId);
+    return lock && lock.userId !== myUserId;
+}
+
+function applyLockVisual(blockId, lockerUsername, lockerColor) {
+    const block = mainLayer.querySelector(`[data-id="${blockId}"]`);
+    if (!block) return;
+
+    block.classList.add('block-locked');
+
+    // Убираем старый оверлей если есть
+    const old = block.querySelector('.block-lock-overlay');
+    if (old) old.remove();
+
+    const ns = "http://www.w3.org/2000/svg";
+
+    // Рамка-подсветка
+    const shape = block.querySelector('rect, polygon, ellipse');
+    if (!shape) return;
+    const bbox = shape.getBBox();
+
+    const overlay = document.createElementNS(ns, "g");
+    overlay.classList.add('block-lock-overlay');
+
+    // Пульсирующая рамка
+    const border = document.createElementNS(ns, "rect");
+    border.setAttribute('x', bbox.x - 3);
+    border.setAttribute('y', bbox.y - 3);
+    border.setAttribute('width', bbox.width + 6);
+    border.setAttribute('height', bbox.height + 6);
+    border.setAttribute('fill', 'none');
+    border.setAttribute('stroke', lockerColor);
+    border.setAttribute('stroke-width', '2');
+    border.setAttribute('stroke-dasharray', '5,3');
+    border.setAttribute('rx', '3');
+    border.setAttribute('opacity', '0.85');
+
+    // Анимация штриховки
+    const animate = document.createElementNS(ns, "animateTransform");
+    animate.setAttribute('attributeName', 'transform');
+    animate.setAttribute('type', 'translate'); // не нужна, используем stroke-dashoffset
+    border.innerHTML = `<animate attributeName="stroke-dashoffset" from="0" to="16" dur="4s" repeatCount="indefinite"/>`;
+
+    // Бейдж с именем над блоком
+    const badgePad = 4;
+    const badgeH = 16;
+    const badgeText = lockerUsername;
+    const estimatedW = badgeText.length * 6 + badgePad * 2; 
+
+    const badgeG = document.createElementNS(ns, "g");
+    const badgeBg = document.createElementNS(ns, "rect");
+    badgeBg.setAttribute('x', bbox.x - 3);
+    badgeBg.setAttribute('y', bbox.y - 3 - badgeH - 2);
+    badgeBg.setAttribute('width', estimatedW);
+    badgeBg.setAttribute('height', badgeH);
+    badgeBg.setAttribute('fill', lockerColor);
+    badgeBg.setAttribute('rx', '3');
+
+    const badgeTxt = document.createElementNS(ns, "text");
+    badgeTxt.setAttribute('x', bbox.x - 3 + badgePad + 12);
+    badgeTxt.setAttribute('y', bbox.y - 3 - badgeH - 2 + badgeH - 4);
+    badgeTxt.setAttribute('font-size', '9');
+    badgeTxt.setAttribute('fill', '#fff');
+    badgeTxt.setAttribute('font-weight', '600');
+    badgeTxt.setAttribute('font-family', "'Inter', sans-serif");
+    badgeTxt.textContent = badgeText;
+
+    badgeG.appendChild(badgeBg);
+    badgeG.appendChild(lockIcon);
+    badgeG.appendChild(badgeTxt);
+
+    overlay.appendChild(border);
+    overlay.appendChild(badgeG);
+    block.appendChild(overlay);
+}
+
+function removeLockVisual(blockId) {
+    const block = mainLayer.querySelector(`[data-id="${blockId}"]`);
+    if (!block) return;
+    block.classList.remove('block-locked');
+    const overlay = block.querySelector('.block-lock-overlay');
+    if (overlay) overlay.remove();
+}
 
 let isApplyingRemote = false;
 let myRole = 'viewer'; // будет обновлено при подключении
@@ -1882,6 +2006,20 @@ if (roomId) {
         applyRemoteEvent({ type: 'block:resize', payload });
         isApplyingRemote = false;
     });
+
+    // --- Блокировки блоков ---
+    socket.on('block:locked', ({ blockId, userId, username }) => {
+        const color = getUserColor(userId);
+        lockedBlocks.set(blockId, { userId, username, color });
+        if (userId !== myUserId) {
+            applyLockVisual(blockId, username, color);
+        }
+    });
+
+    socket.on('block:unlocked', ({ blockId }) => {
+        lockedBlocks.delete(blockId);
+        removeLockVisual(blockId);
+    });
 }
 
 // Вспомогательная — собрать текущих юзеров из DOM
@@ -2004,13 +2142,18 @@ function renderCursor(userId, username, x, y) {
         layer.appendChild(group);
 
         // Подгоняем ширину rect под текст после рендера
+        // Используем двойной requestAnimationFrame для гарантии рендера
         requestAnimationFrame(() => {
-            try {
-                const textWidth = text.getComputedTextLength();
-                rect.setAttribute('width', textWidth + 8);
-            } catch(e) {
-                rect.setAttribute('width', username.length * 6.5 + 8);
-            }
+            requestAnimationFrame(() => {
+                try {
+                    const bbox = text.getBBox();
+                    const textWidth = bbox.width;
+                    rect.setAttribute('width', textWidth + 8);
+                } catch(e) {
+                    // Fallback если getBBox не сработал
+                    rect.setAttribute('width', username.length * 6.5 + 8);
+                }
+            });
         });
     }
 
