@@ -293,6 +293,13 @@ function makeTextEditable(group, type) {
 
 // Функция для редактирования текста
 function editText(group, textElement) {
+
+
+    if (isBlockLocked(group.getAttribute('data-id'))) return;
+
+    const blockId = group.getAttribute('data-id');
+    if (roomId) socket.emit('block:lock', { blockId });
+
     const tspans = textElement.querySelectorAll('tspan');
     const currentText = tspans.length > 0 
         ? Array.from(tspans).map(tspan => tspan.textContent.trim()).join('\n')
@@ -354,6 +361,7 @@ function editText(group, textElement) {
      const closeEditor = () => {
         if (textarea.parentNode) {
             textarea.parentNode.removeChild(textarea);
+            if (roomId) socket.emit('block:unlock', { blockId });
         }
         // Возвращаем видимость SVG-тексту в любом сценарии (сохранение или отмена)
         textElement.style.visibility = 'visible';
@@ -540,6 +548,13 @@ function selectBlock(block, isMultiSelect = false) {
 function deleteSelectedBlocks() {
     const layer = getConnectionsLayer();
     
+    for (const block of selectedBlocks) {
+        if (block.hasAttribute('data-type')) {
+            const blockId = block.getAttribute('data-id');
+            if (isBlockLocked(blockId)) return; // Выходим полностью, не удаляем ничего
+        }
+    }
+
     const blockIds = [];
         selectedBlocks.forEach(block => {
         if (block.hasAttribute('data-type')) blockIds.push(block.getAttribute('data-id'));
@@ -1315,10 +1330,16 @@ function makePortsInteractive(group) {
 }
 
 function startDrawingLine(group, port, event) {
+
+    if (isBlockLocked(group.getAttribute('data-id'))) return;
+
     isDrawing = true;
     drawingFromGroup = group;
     drawingFromPort = port.getAttribute('data-port');
     
+    const blockId = group.getAttribute('data-id');
+    if (roomId) socket.emit('block:lock', { blockId });
+
     // Получаем координаты порта относительно SVG
     const svgRect = svg.getBoundingClientRect();
     const cx = parseFloat(port.getAttribute('cx'));
@@ -1357,52 +1378,40 @@ function startDrawingLine(group, port, event) {
     showAllPorts();
     
     const onMouseMove = (moveEvent) => {
-        const rect = svg.getBoundingClientRect();
-        const mouseX = moveEvent.clientX - rect.left;
-        const mouseY = moveEvent.clientY - rect.top;
-        
-        tempLine.setAttribute('x2', mouseX);
-        tempLine.setAttribute('y2', mouseY);
-        
-        // Подсвечиваем порт под курсором
+        const svgP = clientToSvg(moveEvent.clientX, moveEvent.clientY);
+
+        tempLine.setAttribute('x2', svgP.x);
+        tempLine.setAttribute('y2', svgP.y);
+
         highlightPortUnderCursor(moveEvent.clientX, moveEvent.clientY);
     };
-    
+
     const onMouseUp = (upEvent) => {
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
-        
-        // Получаем координаты отпускания относительно SVG
-        const svgRect = svg.getBoundingClientRect();
-        const mouseX = upEvent.clientX - svgRect.left;
-        const mouseY = upEvent.clientY - svgRect.top;
-        
-        // Проверяем, попали ли на порт
+
+        const svgP = clientToSvg(upEvent.clientX, upEvent.clientY);
+
         const targetPort = findPortAtPosition(upEvent.clientX, upEvent.clientY);
-        
+
         if (targetPort) {
             const targetGroup = targetPort.closest('g[data-type]');
             const targetPortName = targetPort.getAttribute('data-port');
-            
-            // Не даем соединить блок сам с собой
             if (targetGroup !== drawingFromGroup) {
                 createConnection(drawingFromGroup, drawingFromPort, targetGroup, targetPortName, null, null);
             }
         } else {
-            // Создаем соединение со свободным концом
-            createConnection(drawingFromGroup, drawingFromPort, null, null, mouseX, mouseY);
+            createConnection(drawingFromGroup, drawingFromPort, null, null, svgP.x, svgP.y);
+            const blockId = group.getAttribute('data-id');
+            if (roomId) socket.emit('block:unlock', { blockId });
         }
-        
-        // Удаляем временную линию
-        if (tempLine) {
-            tempLine.remove();
-            tempLine = null;
-        }
-        
+
+        if (tempLine) { tempLine.remove(); tempLine = null; }
+
         isDrawing = false;
         drawingFromGroup = null;
         drawingFromPort = null;
-        
+
         resetAllPortsHighlight();
         hideAllPorts();
     };
@@ -1729,6 +1738,61 @@ document.head.appendChild(style);
 
 //#endregion
 
+//#region Панорамирование холста (ЛКМ на пустом месте)
+
+(function initPan() {
+    const canvasArea = document.querySelector('.canvas-area');
+    if (!canvasArea) return;
+
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+    let scrollStartX = 0;
+    let scrollStartY = 0;
+
+    // mousedown на SVG — начинаем пан только если кликнули по пустому месту
+    svg.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        // Пропускаем клики по блокам, соединениям, хэндлам и портам
+        if (e.target.closest('g[data-type]')) return;
+        if (e.target.closest('.connection-group')) return;
+        if (e.target.classList.contains('resize-handle')) return;
+        if (e.target.classList.contains('connection-port')) return;
+
+        isPanning = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        scrollStartX = canvasArea.scrollLeft;
+        scrollStartY = canvasArea.scrollTop;
+
+        svg.style.cursor = 'grabbing';
+        // Предотвращаем выделение текста при перетаскивании
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isPanning) return;
+        const dx = e.clientX - panStartX;
+        const dy = e.clientY - panStartY;
+        canvasArea.scrollLeft = scrollStartX - dx;
+        canvasArea.scrollTop  = scrollStartY - dy;
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!isPanning) return;
+        isPanning = false;
+        svg.style.cursor = '';
+    });
+
+    // Сбрасываем пан если окно теряет фокус (например Alt+Tab)
+    window.addEventListener('blur', () => {
+        isPanning = false;
+        svg.style.cursor = '';
+    });
+})();
+
+//#endregion
+
 //#region Сокет — совместное редактирование
 
 const socket = io();
@@ -1749,21 +1813,21 @@ function applyLockVisual(blockId, lockerUsername, lockerColor) {
 
     block.classList.add('block-locked');
 
-    // Убираем старый оверлей если есть
+    // Убираем старый оверлей
     const old = block.querySelector('.block-lock-overlay');
     if (old) old.remove();
 
     const ns = "http://www.w3.org/2000/svg";
-
-    // Рамка-подсветка
     const shape = block.querySelector('rect, polygon, ellipse');
     if (!shape) return;
     const bbox = shape.getBBox();
 
     const overlay = document.createElementNS(ns, "g");
     overlay.classList.add('block-lock-overlay');
+    // Сохраняем данные локера на оверлее для переотрисовки
+    overlay.dataset.lockerUsername = lockerUsername;
+    overlay.dataset.lockerColor = lockerColor;
 
-    // Пульсирующая рамка
     const border = document.createElementNS(ns, "rect");
     border.setAttribute('x', bbox.x - 3);
     border.setAttribute('y', bbox.y - 3);
@@ -1775,17 +1839,10 @@ function applyLockVisual(blockId, lockerUsername, lockerColor) {
     border.setAttribute('stroke-dasharray', '5,3');
     border.setAttribute('rx', '3');
     border.setAttribute('opacity', '0.85');
-
-    // Анимация штриховки
-    const animate = document.createElementNS(ns, "animateTransform");
-    animate.setAttribute('attributeName', 'transform');
-    animate.setAttribute('type', 'translate'); // не нужна, используем stroke-dashoffset
     border.innerHTML = `<animate attributeName="stroke-dashoffset" from="0" to="16" dur="4s" repeatCount="indefinite"/>`;
 
-    // Бейдж с именем над блоком
     const badgePad = 4;
     const badgeH = 16;
-    const badgeText =  lockerUsername;
     const estimatedW = lockerUsername.length * 6.5 + badgePad * 2 + 16;
 
     const badgeG = document.createElementNS(ns, "g");
@@ -1804,16 +1861,21 @@ function applyLockVisual(blockId, lockerUsername, lockerColor) {
     badgeTxt.setAttribute('fill', '#fff');
     badgeTxt.setAttribute('font-weight', '600');
     badgeTxt.setAttribute('font-family', "'Inter', sans-serif");
-    badgeTxt.textContent = badgeText;
+    badgeTxt.textContent = lockerUsername;
 
     badgeG.appendChild(badgeBg);
     badgeG.appendChild(badgeTxt);
-
     overlay.appendChild(border);
     overlay.appendChild(badgeG);
     block.appendChild(overlay);
 }
 
+// Новая функция — обновить рамку у уже залоченного блока (после ресайза)
+function refreshLockVisual(blockId) {
+    const lock = lockedBlocks.get(blockId);
+    if (!lock) return;
+    applyLockVisual(blockId, lock.username, lock.color);
+}
 
 function removeLockVisual(blockId) {
     const block = mainLayer.querySelector(`[data-id="${blockId}"]`);
@@ -1836,28 +1898,31 @@ function emitEvent(type, payload) {
     socket.emit('editor:event', { type, payload });
 }
 
-// --- Трансляция курсора ---
+function clientToSvg(clientX, clientY) {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+
 if (roomId) {
     let cursorThrottle = 0;
     svg.addEventListener('mousemove', (e) => {
         const now = Date.now();
-        if (now - cursorThrottle < 30) return; // ~30fps
+        if (now - cursorThrottle < 30) return;
         cursorThrottle = now;
 
-        const rect = svg.getBoundingClientRect();
-        const canvasArea = document.querySelector('.canvas-area');
-        const x = e.clientX - rect.left + canvasArea.scrollLeft;
-        const y = e.clientY - rect.top + canvasArea.scrollTop;
-        socket.emit('cursor:move', { x, y });
+        const svgP = clientToSvg(e.clientX, e.clientY);
+        socket.emit('cursor:move', { x: svgP.x, y: svgP.y });
     });
 }
-
 function canEdit() {
     if (!roomId) return true; // не в сессии — можно всё
     return myRole === 'editor' || myRole === 'owner';
 }
 
-// --- Хотбар ---
+
 
 function initHotbar() {
     const hotbar = document.getElementById('hotbar');
@@ -2087,6 +2152,8 @@ if (roomId) {
         isApplyingRemote = true;
         applyRemoteEvent({ type: 'block:resize', payload });
         isApplyingRemote = false;
+        // Обновляем рамку лока после ресайза
+        refreshLockVisual(payload.blockId);
     });
 
     // --- Блокировки блоков ---
@@ -2321,14 +2388,17 @@ function applyRemoteEvent({ type, payload }) {
             updateHandlesPosition(block, payload.hx, payload.hy, payload.hw, payload.hh);
             updatePortsPosition(block);
             updateAllConnections();
+            refreshLockVisual(payload.blockId);
             break;
         }
 
         case 'block:text': {
             const block = mainLayer.querySelector(`[data-id="${payload.blockId}"]`);
             if (block) {
-                const text = block.querySelector('text');
-                if (text) text.textContent = payload.text;
+                const textEl = block.querySelector('text');
+                if (textEl) {
+                    setMultilineText(textEl, payload.text);
+                }
             }
             break;
         }
