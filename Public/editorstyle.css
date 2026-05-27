@@ -510,12 +510,12 @@ html, body {
 
 .hotbar-user-name {
     font-size: 11px;
-    color: #888;
+    color: #a1a1a1;;
 }
 
 .hotbar-role-select {
     border: 1px solid #444;
-    color: #aaa;
+    color: #a1a1a1;
     font-size: 11px;
     padding: 0 2px;
     cursor: pointer;
@@ -549,19 +549,23 @@ html, body {
     border-radius: 3px;
 }
 
-.hotbar-user-dot.owner   { background: #f59e0b; }
-.hotbar-user-dot.editor  { background: #10b981; }
-.hotbar-user-dot.viewer  { background: #6b7280; }
+.hotbar-user-dot.owner   { background: #000000; }
+.hotbar-user-dot.editor  { background: #000000; }
+.hotbar-user-dot.viewer  { background: #000000; }
 
 
 
 .hotbar-role-select:hover {
-    border-color: #666;
+    border-color: #7e7e7e;
 }
 
+.hotbar-role-badge.owner { 
+    background: rgb(253, 253, 253); /* Черный фон */
+    color: #a1a1a1;;      /* Белый текст */
+}
 
-.hotbar-role-badge.editor { background: #86fadb; color: #10b981; }
-.hotbar-role-badge.viewer { background: #6685af; color: #6b7280; }
+.hotbar-role-badge.editor { background: #d3fdf2; color: #a1a1a1;; }
+.hotbar-role-badge.viewer { background: #ffd4d4; color: #a1a1a1;; }
 
 /* Сдвиг холста чтобы хотбар не перекрывал */
 .canvas-area {

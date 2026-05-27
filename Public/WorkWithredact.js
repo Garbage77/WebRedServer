@@ -295,53 +295,74 @@ function makeTextEditable(group, type) {
 function editText(group, textElement) {
     const currentText = textElement.textContent;
     const groupRect = group.getBoundingClientRect();
-    const canvasArea = document.querySelector('.canvas-area');
-    const canvasRect = canvasArea.getBoundingClientRect();
-    
-    // Создаем input элемент
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = currentText;
-    input.style.position = 'fixed';
-    input.style.left = `${groupRect.left + groupRect.width / 2 - 50}px`;
-    input.style.top = `${groupRect.top + groupRect.height / 2 - 15}px`;
-    input.style.width = '100px';
-    input.style.height = '30px';
-    input.style.fontSize = '12px';
-    input.style.fontFamily = "'Inter', sans-serif";
-    input.style.textAlign = 'center';
-    input.style.border = '2px solid #0066cc';
-    input.style.borderRadius = '4px';
-    input.style.outline = 'none';
-    input.style.zIndex = '1000';
-    input.style.backgroundColor = 'white';
-    
-    document.body.appendChild(input);
-    input.focus();
-    input.select();
-    
+
+    // Используем textarea для поддержки многострочного текста (Shift+Enter)
+    const textarea = document.createElement('textarea');
+    textarea.value = currentText;
+    textarea.style.position = 'fixed';
+    textarea.style.left = `${groupRect.left + groupRect.width / 2 - 60}px`;
+    textarea.style.top = `${groupRect.top + groupRect.height / 2 - 24}px`;
+    textarea.style.width = '120px';
+    textarea.style.minHeight = '48px';
+    textarea.style.fontSize = '12px';
+    textarea.style.fontFamily = "'Inter', sans-serif";
+    textarea.style.textAlign = 'center';
+    textarea.style.border = '2px solid #0066cc';
+    textarea.style.borderRadius = '4px';
+    textarea.style.outline = 'none';
+    textarea.style.zIndex = '1000';
+    textarea.style.backgroundColor = 'white';
+    textarea.style.resize = 'none';
+    textarea.style.overflow = 'hidden';
+    textarea.style.lineHeight = '1.4';
+    textarea.style.padding = '4px';
+    textarea.style.boxSizing = 'border-box';
+
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    // Авторастяжка по высоте
+    const autoResize = () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
+    };
+    textarea.addEventListener('input', autoResize);
+
+    let saved = false;
+
     // Функция сохранения текста
     const saveText = () => {
-        const newText = input.value.trim();
+        if (saved) return;
+        saved = true;
+        // Заменяем переносы строк на символ переноса SVG (используем \n как разделитель)
+        const newText = textarea.value.trim();
         if (newText) {
-            textElement.textContent = newText;
+            // Поддержка многострочного текста в SVG через tspan
+            setMultilineText(textElement, newText);
             emitEvent('block:text', {
-            blockId: group.getAttribute('data-id'),
-            text: newText
+                blockId: group.getAttribute('data-id'),
+                text: newText
             });
         } else {
             textElement.textContent = currentText;
         }
-        document.body.removeChild(input);
+        document.body.removeChild(textarea);
     };
-    
-    // Сохраняем при потере фокуса или нажатии Enter
-    input.addEventListener('blur', saveText);
-    input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
+
+    // Enter = сохранить, Shift+Enter = новая строка
+    textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
             saveText();
+        } else if (e.key === 'Escape') {
+            saved = true;
+            textElement.textContent = currentText;
+            document.body.removeChild(textarea);
         }
     });
+
+    textarea.addEventListener('blur', saveText);
 }
 
 // Функция для перемещения блоков на холсте
@@ -1703,8 +1724,8 @@ function applyLockVisual(blockId, lockerUsername, lockerColor) {
     // Бейдж с именем над блоком
     const badgePad = 4;
     const badgeH = 16;
-    const badgeText = lockerUsername;
-    const estimatedW = badgeText.length * 6 + badgePad * 2; 
+    const badgeText =  lockerUsername;
+    const estimatedW = lockerUsername.length * 6.5 + badgePad * 2 + 16;
 
     const badgeG = document.createElementNS(ns, "g");
     const badgeBg = document.createElementNS(ns, "rect");
@@ -1716,7 +1737,7 @@ function applyLockVisual(blockId, lockerUsername, lockerColor) {
     badgeBg.setAttribute('rx', '3');
 
     const badgeTxt = document.createElementNS(ns, "text");
-    badgeTxt.setAttribute('x', bbox.x - 3 + badgePad + 12);
+    badgeTxt.setAttribute('x', bbox.x - 3 + badgePad);
     badgeTxt.setAttribute('y', bbox.y - 3 - badgeH - 2 + badgeH - 4);
     badgeTxt.setAttribute('font-size', '9');
     badgeTxt.setAttribute('fill', '#fff');
@@ -1725,13 +1746,13 @@ function applyLockVisual(blockId, lockerUsername, lockerColor) {
     badgeTxt.textContent = badgeText;
 
     badgeG.appendChild(badgeBg);
-    badgeG.appendChild(lockIcon);
     badgeG.appendChild(badgeTxt);
 
     overlay.appendChild(border);
     overlay.appendChild(badgeG);
     block.appendChild(overlay);
 }
+
 
 function removeLockVisual(blockId) {
     const block = mainLayer.querySelector(`[data-id="${blockId}"]`);
@@ -2214,11 +2235,27 @@ function applyRemoteEvent({ type, payload }) {
                     }
                 }
             }
-            // Обновляем позицию текста
+            // Центрируем текст через bbox самой фигуры (работает для всех типов)
             const text = block.querySelector('text');
-            if (text && payload.x != null && payload.width != null) {
-                text.setAttribute('x', parseFloat(payload.x) + parseFloat(payload.width) / 2);
-                text.setAttribute('y', parseFloat(payload.y) + parseFloat(payload.height) / 2 + 5);
+            if (text) {
+                try {
+                    const bbox = shape.getBBox();
+                    const cx = bbox.x + bbox.width / 2;
+                    const cy = bbox.y + bbox.height / 2;
+                    text.setAttribute('x', cx);
+                    text.setAttribute('y', cy + 5);
+                    // Обновляем x у tspan'ов если есть многострочный текст
+                    text.querySelectorAll('tspan').forEach(ts => ts.setAttribute('x', cx));
+                } catch(e) {
+                    // Fallback если getBBox недоступен
+                    if (payload.x != null && payload.width != null) {
+                        const cx = parseFloat(payload.x) + parseFloat(payload.width) / 2;
+                        const cy = parseFloat(payload.y) + parseFloat(payload.height) / 2;
+                        text.setAttribute('x', cx);
+                        text.setAttribute('y', cy + 5);
+                        text.querySelectorAll('tspan').forEach(ts => ts.setAttribute('x', cx));
+                    }
+                }
             }
             updateHandlesPosition(block, payload.hx, payload.hy, payload.hw, payload.hh);
             updatePortsPosition(block);
