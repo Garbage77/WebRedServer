@@ -393,7 +393,7 @@ function editText(group, textElement) {
             saveText();
         } else if (e.key === 'Escape') {
             saved = true;
-            textElement.textContent = currentText;
+            saveText();
             closeEditor();
         }
     });
@@ -443,9 +443,15 @@ function makeDraggable(group) {
         isDragging = true;
         hasMoved = false;
 
-        // Захватываем блок — сообщаем всем
+        // БАГ 4 FIX: захватываем блок локально немедленно (оптимистично),
+        // потом сервер подтвердит или отклонит через block:locked/block:unlocked
         const blockId = group.getAttribute('data-id');
-        if (roomId) socket.emit('block:lock', { blockId });
+        if (roomId) {
+            // Предварительно ставим локальную блокировку чтобы второй клиент
+            // не смог захватить блок до ответа сервера
+            lockedBlocks.set(blockId, { userId: myUserId, username: myUsername, color: getUserColor(myUserId) });
+            socket.emit('block:lock', { blockId });
+        }
         
         // Получаем текущую позицию
         const transform = group.getAttribute('transform');
@@ -1014,9 +1020,13 @@ function getPreviewImage() {
 }
 
 function getSvgContent() {
+  var clone = mainLayer.cloneNode(true);
+  clone.querySelectorAll('.block-lock-overlay').forEach(function(el) { el.remove(); });
+  clone.querySelectorAll('.block-locked').forEach(function(el) { el.classList.remove('block-locked'); });
   return JSON.stringify({
-    blocks: mainLayer.innerHTML,
-    connections: connections
+    blocks: clone.innerHTML,
+    connections: connections,
+    notes: textNotes
   });
 }
 
@@ -1044,16 +1054,17 @@ async function loadFlowchart() {
 }
 
 function restoreFromContent(content) {
-  let blocksHtml, savedConnections;
+  var blocksHtml, savedConnections, savedNotes;
 
   try {
-    const parsed = JSON.parse(content);
+    var parsed = JSON.parse(content);
     blocksHtml = parsed.blocks;
     savedConnections = parsed.connections || [];
+    savedNotes = parsed.notes || [];
   } catch(e) {
-    // Старый формат — просто HTML
     blocksHtml = content;
     savedConnections = [];
+    savedNotes = [];
   }
 
   mainLayer.innerHTML = blocksHtml;
@@ -1082,6 +1093,20 @@ function restoreFromContent(content) {
   }, 0);
 
   connections.forEach(conn => drawConnection(conn));
+
+  // Восстанавливаем текстовые заметки
+  textNotes = [];
+  textNoteCounter = 0;
+  var nl = document.getElementById('notes-layer');
+  if (nl) { nl.innerHTML = ''; notesLayer = nl; }
+  savedNotes.forEach(function(note) {
+    if (note.id) {
+      var num = parseInt(note.id.replace('note_', '')) || 0;
+      if (num > textNoteCounter) textNoteCounter = num;
+    }
+    textNotes.push(note);
+    renderTextNote(note);
+  });
 }
 
 function restoreBlockHandlers() {
@@ -1130,24 +1155,27 @@ window.addEventListener('load', async () => {
         return;
       }
 
+      // Если схема уже существует в БД — сохраняем без диалога названия
       if (currentFlowchartId) {
-        saveToServer(null).then(() => {
+        saveToServer().then(() => {
           localStorage.removeItem('flowchart_html');
           window.location.href = '/MainMenu.html';
         });
-      } else {
-        showSaveModal(
-          async (title) => {
-            await saveToServer(title);
-            localStorage.removeItem('flowchart_html');
-            window.location.href = '/MainMenu.html';
-          },
-          () => {
-            localStorage.removeItem('flowchart_html');
-            window.location.href = '/MainMenu.html';
-          }
-        );
+        return;
       }
+
+      // Новая схема — спрашиваем название
+      showSaveModal(
+        async (title) => {
+          await saveToServer(title);
+          localStorage.removeItem('flowchart_html');
+          window.location.href = '/MainMenu.html';
+        },
+        () => {
+          localStorage.removeItem('flowchart_html');
+          window.location.href = '/MainMenu.html';
+        }
+      );
     });
   }
 });
@@ -1158,13 +1186,16 @@ async function saveToServer(title) {
   if (!userId) { alert('Войдите в аккаунт'); return; }
 
   const preview = getPreviewImage();
-  const svgContent = getSvgContent(); // теперь JSON со blocks + connections
+  const svgContent = getSvgContent();
 
   if (currentFlowchartId) {
+    // Обновляем существующую схему; если передан новый title — обновляем и его
+    const body = { preview, svgContent };
+    if (title) body.title = title;
     await fetch(`/flowcharts/${currentFlowchartId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preview, svgContent })
+      body: JSON.stringify(body)
     });
   } else {
     const res = await fetch('/flowcharts', {
@@ -1187,6 +1218,7 @@ function showSaveModal(onConfirm, onSkip) {
   const skipBtn = document.getElementById('saveSkipBtn');
 
   input.value = '';
+  input.placeholder = 'Название схемы';
   overlay.style.display = 'flex';
   setTimeout(() => input.focus(), 100);
 
@@ -1324,6 +1356,8 @@ function makePortsInteractive(group) {
         port.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             e.preventDefault();
+            // БАГ 2 FIX: читатель не может рисовать связи
+            if (!canEdit()) return;
             startDrawingLine(group, port, e);
         });
     });
@@ -1610,17 +1644,16 @@ function drawConnection(connection) {
         marker.innerHTML = '<polygon points="0 0, 10 3, 0 6" fill="#1a1a1a" />';
         defs.appendChild(marker);
         
-        path.setAttribute('marker-end', `url(#${arrowId})`);
+        path.setAttribute('marker-end', 'url(#' + arrowId + ')');
     }
     
     group.appendChild(path);
 
     path.style.cursor = 'pointer';
     path.setAttribute('stroke-width', '2');
-    
-    path.addEventListener('click', (e) => {
+
+    path.addEventListener('click', function(e) {
         e.preventDefault();
-        
         if (e.ctrlKey || e.metaKey) {
             if (selectedBlocks.has(group)) {
                 group.classList.remove('selected-block');
@@ -1636,19 +1669,9 @@ function drawConnection(connection) {
         }
     });
 
-
-        // ОТЛАДКА: проверим, кликабельна ли группа
-    group.addEventListener('mousedown', (e) => {
-        console.log('mousedown на group соединения', connection.id);
-    });
-    
-    path.addEventListener('mousedown', (e) => {
-        console.log('mousedown на path соединения', connection.id);
-    });
-
-
     layer.appendChild(group);
 }
+
 
 function buildOrthogonalPath(x1, y1, x2, y2, fromPort, toPort) {
     const offset = 30;
@@ -1754,6 +1777,8 @@ document.head.appendChild(style);
     svg.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         // Пропускаем клики по блокам, соединениям, хэндлам и портам
+        if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') {
+        document.activeElement.blur();}
         if (e.target.closest('g[data-type]')) return;
         if (e.target.closest('.connection-group')) return;
         if (e.target.classList.contains('resize-handle')) return;
@@ -2004,6 +2029,14 @@ function updateUserRole(userId, role) {
 
     // Если это я — обновляем myRole
     if (userId === myUserId) {
+        // БАГ 1 FIX: если я стал viewer/reader — отпускаем все блоки которые держим
+        if (role === 'viewer') {
+            lockedBlocks.forEach((lock, blockId) => {
+                if (lock.userId === myUserId) {
+                    socket.emit('block:unlock', { blockId });
+                }
+            });
+        }
         myRole = role;
         updateEditingUI();
     }
@@ -2025,12 +2058,10 @@ function updateEditingUI() {
 
 if (roomId) {
     socket.on('connect', () => {
-        // Если roomId пришёл из кнопки "Создать" — мы создатели
-        // Если из поля ввода на MainMenu — мы гости, надо проверить что комната есть
         const isCreating = urlParamsSocket.get('creating') === '1';
 
         if (!isCreating) {
-            // Сначала проверяем — вдруг комнаты нет
+            // Гость: проверяем, существует ли комната
             socket.emit('room:check', { roomId }, ({ exists }) => {
                 if (!exists) {
                     showRoomNotFound();
@@ -2041,6 +2072,12 @@ if (roomId) {
         } else {
             joinRoom();
         }
+    });
+
+    // Автоматический re-join при переподключении (например, после кратковременного обрыва)
+    socket.on('reconnect', () => {
+        console.log('Socket reconnected, re-joining room...');
+        joinRoom();
     });
 
     function joinRoom() {
@@ -2056,6 +2093,27 @@ if (roomId) {
 
     socket.on('room:not_found', () => {
         showRoomNotFound();
+    });
+
+    // Владелец вышел — показываем сообщение и уходим в меню
+    socket.on('room:owner_left', () => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position:fixed;top:0;left:0;width:100%;height:100%;
+            background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);
+            display:flex;align-items:center;justify-content:center;z-index:9999;
+        `;
+        overlay.innerHTML = `
+            <div style="background:#fff;padding:36px 32px;max-width:320px;width:100%;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.15);">
+                <div style="font-size:32px;margin-bottom:12px;">👋</div>
+                <h3 style="margin:0 0 10px;font-size:17px;letter-spacing:1px;text-transform:uppercase;">Сессия завершена</h3>
+                <div style="border:1px solid #333;padding:10px 12px;margin-bottom:20px;font-size:13px;text-align:left;color:#555;line-height:1.5;">
+                    Владелец схемы покинул сессию. Совместное редактирование завершено.
+                </div>
+                <button onclick="window.location.href='/MainMenu.html'" style="width:100%;padding:11px;background:transparent;border:1px solid #333;font-size:14px;letter-spacing:1px;cursor:pointer;transition:0.2s;" onmouseover="this.style.background='#333';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#333'">← Вернуться в меню</button>
+            </div>
+        \\`;
+        document.body.appendChild(overlay);
     });
 
     function showRoomNotFound() {
@@ -2075,7 +2133,7 @@ if (roomId) {
                 </div>
                 <button onclick="window.location.href='/MainMenu.html'" style="width:100%;padding:11px;background:transparent;border:1px solid #333;font-size:14px;letter-spacing:1px;cursor:pointer;transition:0.2s;" onmouseover="this.style.background='#333';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#333'">← Вернуться в меню</button>
             </div>
-        `;
+        \\`;
         document.body.appendChild(overlay);
     }
 
@@ -2417,12 +2475,284 @@ function applyRemoteEvent({ type, payload }) {
             break;
 
         case 'conn:delete': {
-            const connEl = document.querySelector(`[data-connection-id="${payload.connId}"]`);
+            const connEl = document.querySelector('[data-connection-id="' + payload.connId + '"]');
             if (connEl) connEl.remove();
-            connections = connections.filter(c => c.id !== payload.connId);
+            connections = connections.filter(function(c) { return c.id !== payload.connId; });
+            break;
+        }
+
+        case 'note:create':
+        case 'note:update': {
+            var existing = textNotes.find(function(n) { return n.id === payload.note.id; });
+            if (existing) {
+                existing.text = payload.note.text;
+                existing.x = payload.note.x;
+                existing.y = payload.note.y;
+                renderTextNote(existing);
+            } else {
+                textNotes.push(payload.note);
+                renderTextNote(payload.note);
+            }
+            break;
+        }
+
+        case 'note:move_live': {
+            var noteEl = document.querySelector('[data-note-id="' + payload.noteId + '"]');
+            if (noteEl) noteEl.setAttribute('transform', 'translate(' + payload.x + ',' + payload.y + ')');
+            var n = textNotes.find(function(n) { return n.id === payload.noteId; });
+            if (n) { n.x = payload.x; n.y = payload.y; }
+            break;
+        }
+
+        case 'note:delete': {
+            var noteElD = document.querySelector('[data-note-id="' + payload.noteId + '"]');
+            if (noteElD) noteElD.remove();
+            textNotes = textNotes.filter(function(n) { return n.id !== payload.noteId; });
             break;
         }
     }
 }
+
+//#endregion
+
+
+//#region Текстовые заметки (двойной клик на пустом месте холста)
+
+var textNotes = []; // { id, x, y, text }
+var textNoteCounter = 0;
+var notesLayer = null;
+
+function getNotesLayer() {
+    if (!notesLayer) {
+        var ns = "http://www.w3.org/2000/svg";
+        notesLayer = document.getElementById('notes-layer');
+        if (!notesLayer) {
+            notesLayer = document.createElementNS(ns, "g");
+            notesLayer.setAttribute('id', 'notes-layer');
+            svg.appendChild(notesLayer);
+        }
+    }
+    return notesLayer;
+}
+
+// Двойной клик на пустом месте SVG
+svg.addEventListener('dblclick', function(e) {
+    if (!canEdit()) return;
+    // Если кликнули по блоку, соединению или заметке — не создаём новую
+    if (e.target.closest('g[data-type]')) return;
+    if (e.target.closest('.connection-group')) return;
+    if (e.target.closest('.text-note-group')) return;
+
+    var svgP = clientToSvg(e.clientX, e.clientY);
+    openNoteInput(svgP.x, svgP.y, null);
+});
+
+function openNoteInput(svgX, svgY, existingNote) {
+    // Переводим SVG координаты в экранные
+    var pt = svg.createSVGPoint();
+    pt.x = svgX;
+    pt.y = svgY;
+    var screen = pt.matrixTransform(svg.getScreenCTM());
+
+    var input = document.createElement('textarea');
+    input.value = existingNote ? existingNote.text : '';
+    input.placeholder = 'Введите текст...';
+    input.rows = 3;
+    input.style.position = 'fixed';
+    input.style.left = (screen.x) + 'px';
+    input.style.top = (screen.y) + 'px';
+    input.style.minWidth = '120px';
+    input.style.minHeight = '60px';
+    input.style.padding = '6px 8px';
+    input.style.fontSize = '12px';
+    input.style.fontFamily = 'Inter, sans-serif';
+    input.style.border = '1.5px solid #3b82f6';
+    input.style.borderRadius = '4px';
+    input.style.outline = 'none';
+    input.style.background = '#fffde7';
+    input.style.zIndex = '9999';
+    input.style.resize = 'both';
+    input.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+    input.style.lineHeight = '1.4';
+    document.body.appendChild(input);
+    input.focus();
+
+    var saved = false;
+    var save = function() {
+        if (saved) return;
+        saved = true;
+        var text = input.value.trim();
+        if (input.parentNode) input.parentNode.removeChild(input);
+        if (!text) {
+            // Если редактировали существующую и очистили — удаляем
+            if (existingNote) {
+                deleteTextNote(existingNote.id);
+            }
+            return;
+        }
+        if (existingNote) {
+            existingNote.text = text;
+            renderTextNote(existingNote);
+            emitEvent('note:update', { note: existingNote });
+        } else {
+            var note = { id: 'note_' + (++textNoteCounter), x: svgX, y: svgY, text: text };
+            textNotes.push(note);
+            renderTextNote(note);
+            emitEvent('note:create', { note: note });
+        }
+        saveFlowchart();
+    };
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', function(e) {
+        // Ctrl+Enter или просто Escape — сохраняем
+        if ((e.key === 'Enter' && e.ctrlKey) || e.key === 'Escape') {
+            e.preventDefault();
+            save();
+        }
+    });
+}
+
+function renderTextNote(note) {
+    var ns = "http://www.w3.org/2000/svg";
+    var layer = getNotesLayer();
+
+    // Убираем старый рендер этой заметки
+    var old = layer.querySelector('[data-note-id="' + note.id + '"]');
+    if (old) old.remove();
+
+    var g = document.createElementNS(ns, "g");
+    g.setAttribute('data-note-id', note.id);
+    g.setAttribute('transform', 'translate(' + note.x + ',' + note.y + ')');
+    g.classList.add('text-note-group');
+    g.style.cursor = 'move';
+
+    // Текст
+    var textEl = document.createElementNS(ns, "text");
+    textEl.setAttribute('font-size', '12');
+    textEl.setAttribute('font-family', 'Inter, sans-serif');
+    textEl.setAttribute('fill', '#333');
+
+    var lines = note.text.split('\n');
+    var lineH = 16;
+    var pad = 8;
+    var maxW = 0;
+
+    lines.forEach(function(line, i) {
+        var tspan = document.createElementNS(ns, "tspan");
+        tspan.setAttribute('x', pad);
+        tspan.setAttribute('y', pad + lineH + i * lineH);
+        tspan.textContent = line || ' ';
+        // Примерная ширина
+        var w = line.length * 6.5 + pad * 2;
+        if (w > maxW) maxW = w;
+        textEl.appendChild(tspan);
+    });
+
+    g.appendChild(textEl);
+    layer.appendChild(g);
+
+    // Двойной клик — редактировать
+    g.addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        if (!canEdit()) return;
+        openNoteInput(note.x, note.y, note);
+    });
+
+    // Delete при выделении
+    g.addEventListener('click', function(e) {
+        e.stopPropagation();
+        // Снимаем другие выделения
+        layer.querySelectorAll('.text-note-group text').forEach(function(t) {
+            t.setAttribute('fill', '#333');
+        });
+        textEl.setAttribute('fill', '#3b82f6');
+        selectedNoteId = note.id;
+    });
+
+    // Перетаскивание
+    makeNoteDraggable(g, note);
+}
+
+var selectedNoteId = null;
+
+// Delete удаляет выделенную заметку
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Delete' && selectedNoteId && selectedBlocks.size === 0) {
+        deleteTextNote(selectedNoteId);
+        selectedNoteId = null;
+    }
+});
+
+function deleteTextNote(noteId) {
+    var layer = getNotesLayer();
+    var el = layer.querySelector('[data-note-id="' + noteId + '"]');
+    if (el) el.remove();
+    textNotes = textNotes.filter(function(n) { return n.id !== noteId; });
+    emitEvent('note:delete', { noteId: noteId });
+    saveFlowchart();
+}
+
+function makeNoteDraggable(g, note) {
+    var isDragging = false;
+    var startX, startY, origX, origY;
+
+    g.addEventListener('mousedown', function(e) {
+        if (e.target.closest && e.target.closest('.text-note-group') !== g) return;
+        if (!canEdit()) return;
+        e.stopPropagation();
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        origX = note.x;
+        origY = note.y;
+
+        var onMove = function(me) {
+            if (!isDragging) return;
+            var dx = me.clientX - startX;
+            var dy = me.clientY - startY;
+            // Переводим экранное смещение в SVG-координаты
+            var pt1 = svg.createSVGPoint(); pt1.x = 0; pt1.y = 0;
+            var pt2 = svg.createSVGPoint(); pt2.x = dx; pt2.y = dy;
+            var m = svg.getScreenCTM().inverse();
+            var s1 = pt1.matrixTransform(m);
+            var s2 = pt2.matrixTransform(m);
+            var svgDx = s2.x - s1.x;
+            var svgDy = s2.y - s1.y;
+            note.x = origX + svgDx;
+            note.y = origY + svgDy;
+            g.setAttribute('transform', 'translate(' + note.x + ',' + note.y + ')');
+            // Live трансляция
+            if (roomId) {
+                emitEvent('note:move_live', { noteId: note.id, x: note.x, y: note.y });
+            }
+        };
+
+        var onUp = function() {
+            if (!isDragging) return;
+            isDragging = false;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            emitEvent('note:update', { note: note });
+            saveFlowchart();
+        };
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+}
+
+// Снять выделение с заметки при клике на пустое место
+svg.addEventListener('click', function(e) {
+    if (!e.target('.text-note-group')) {
+        var layer = getNotesLayer();
+        if (layer) {
+            layer.querySelectorAll('.text-note-group text').forEach(function(t) {
+                t.setAttribute('fill', '#333');
+            });
+        }
+        selectedNoteId = null;
+    }
+});
 
 //#endregion

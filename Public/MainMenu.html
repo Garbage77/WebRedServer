@@ -50,7 +50,7 @@
                     <div class="overlay-text">Войдите или зарегистрируйтесь, чтобы создавать и редактировать блок-схемы</div>
                 </div>
             </div>
-            <a href="editor.html" class ="card create-card">
+            <a href="#" class ="card create-card" id="newFlowchartBtn">
                 <div class="plus">+</div>
                 Новая блок-схема
             </a>
@@ -89,6 +89,26 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="newFlowchartOverlay">
+        <div class="modal">
+            <h3>Новая блок-схема</h3>
+
+            <div class="text-block">
+                Дайте название вашей блок-схеме
+            </div>
+
+            <input type="text" id="newFlowchartTitleInput" placeholder="Название схемы" autofocus>
+
+            <input type="file" id="loadFlowchartFile" accept=".json,application/json" style="display:none;">
+
+            <div class="modal-buttons">
+                <button id="loadFlowchartBtn">Загрузить</button>
+                <button id="createFlowchartBtn">Создать</button>
+                <button id="closeNewFlowchartModal" style="margin-bottom: 0;">Отмена</button>
+            </div>
+        </div>
+    </div>
+
 
 
     <script>
@@ -118,6 +138,82 @@
             });
             modalOverlay.addEventListener('click', (e) => {
                 if (e.target === modalOverlay) closeModal.click();
+            });
+
+            // --- Модалка новой блок-схемы ---
+            const newFlowchartBtn = document.getElementById('newFlowchartBtn');
+            const newFlowchartOverlay = document.getElementById('newFlowchartOverlay');
+            const newFlowchartTitleInput = document.getElementById('newFlowchartTitleInput');
+            const createFlowchartBtn = document.getElementById('createFlowchartBtn');
+            const loadFlowchartBtn = document.getElementById('loadFlowchartBtn');
+            const loadFlowchartFile = document.getElementById('loadFlowchartFile');
+            const closeNewFlowchartModal = document.getElementById('closeNewFlowchartModal');
+
+            newFlowchartBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const userid = localStorage.getItem('userid');
+                if (!userid) return; // не авторизован — карточка перекрыта оверлеем
+                newFlowchartTitleInput.value = '';
+                newFlowchartOverlay.style.display = 'flex';
+                setTimeout(() => newFlowchartTitleInput.focus(), 100);
+            });
+
+            closeNewFlowchartModal.addEventListener('click', () => {
+                newFlowchartOverlay.style.display = 'none';
+            });
+            newFlowchartOverlay.addEventListener('click', (e) => {
+                if (e.target === newFlowchartOverlay) closeNewFlowchartModal.click();
+            });
+
+            // Создать пустую схему
+            createFlowchartBtn.addEventListener('click', async () => {
+                const title = newFlowchartTitleInput.value.trim();
+                if (!title) { alert('Введите название'); return; }
+                const userid = localStorage.getItem('userid');
+
+                const res = await fetch('/flowcharts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: userid, title, preview: '', svgContent: '' })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    window.location.href = `editor.html?id=${data.flowchartId}`;
+                } else {
+                    alert('Ошибка создания схемы');
+                }
+            });
+
+            // Загрузить схему из файла .json
+            loadFlowchartBtn.addEventListener('click', () => loadFlowchartFile.click());
+
+            loadFlowchartFile.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const title = newFlowchartTitleInput.value.trim();
+                if (!title) { alert('Введите название'); loadFlowchartFile.value = ''; return; }
+                const userid = localStorage.getItem('userid');
+
+                try {
+                    const text = await file.text();
+                    JSON.parse(text); // проверяем что файл — корректный JSON
+
+                    const res = await fetch('/flowcharts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: userid, title, preview: '', svgContent: text })
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                        window.location.href = `editor.html?id=${data.flowchartId}`;
+                    } else {
+                        alert('Ошибка создания схемы');
+                    }
+                } catch (err) {
+                    alert('Некорректный файл схемы');
+                } finally {
+                    loadFlowchartFile.value = '';
+                }
             });
 
             // --- Авторизация ---
@@ -195,6 +291,8 @@
                         <div class="menu" data-id="${fc.id}">⋮</div>
                         <div class="card-menu-dropdown" id="dropdown-${fc.id}">
                             <div class="card-menu-item rename-btn" data-id="${fc.id}" data-title="${fc.title}">Переименовать</div>
+                            <div class="card-menu-item save-jpg-btn" data-id="${fc.id}" data-title="${fc.title}">Сохранить как JPG</div>
+                            <div class="card-menu-item save-json-btn" data-id="${fc.id}" data-title="${fc.title}">Сохранить как JSON</div>
                             <div class="card-menu-item danger delete-btn" data-id="${fc.id}">Удалить</div>
                         </div>
                         <div class="card" onclick="window.location.href='editor.html?id=${fc.id}'">
@@ -237,6 +335,20 @@
                         loadFlowcharts(userId);
                     });
 
+                    // Сохранить как JPG
+                    wrapper.querySelector('.save-jpg-btn').addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        dropdown.classList.remove('open');
+                        await exportFlowchartAsJpg(fc.id, fc.title);
+                    });
+
+                    // Сохранить как JSON
+                    wrapper.querySelector('.save-json-btn').addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        dropdown.classList.remove('open');
+                        await exportFlowchartAsJson(fc.id, fc.title);
+                    });
+
                     // Удалить
                     wrapper.querySelector('.delete-btn').addEventListener('click', async (e) => {
                         e.stopPropagation();
@@ -261,6 +373,64 @@
         function clearFlowcharts() {
             const grid = document.getElementById('cards-grid');
             grid.querySelectorAll('.card-wrapper').forEach(c => c.remove());
+        }
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        // Скачать схему в формате JSON (можно будет загрузить обратно в редактор)
+        async function exportFlowchartAsJson(id, title) {
+            try {
+                const res = await fetch(`/flowcharts/single/${id}`);
+                const data = await res.json();
+                if (!data.ok || !data.flowchart.svg_content) {
+                    alert('Не удалось получить данные схемы');
+                    return;
+                }
+                const blob = new Blob([data.flowchart.svg_content], { type: 'application/json' });
+                downloadBlob(blob, `${title}.json`);
+            } catch (e) {
+                console.error('Ошибка экспорта JSON:', e);
+                alert('Ошибка экспорта схемы');
+            }
+        }
+
+        // Скачать превью схемы в формате JPG
+        async function exportFlowchartAsJpg(id, title) {
+            try {
+                const res = await fetch(`/flowcharts/single/${id}`);
+                const data = await res.json();
+                if (!data.ok || !data.flowchart.preview) {
+                    alert('Нет превью для экспорта');
+                    return;
+                }
+
+                const img = new Image();
+                img.onload = () => {
+                    const scale = 3; // повышаем разрешение картинки
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob((blob) => downloadBlob(blob, `${title}.jpg`), 'image/jpeg', 0.92);
+                };
+                img.onerror = () => alert('Ошибка построения изображения');
+                img.src = data.flowchart.preview;
+            } catch (e) {
+                console.error('Ошибка экспорта JPG:', e);
+                alert('Ошибка экспорта схемы');
+            }
         }
 
         function formatDate(dateStr) {

@@ -49,6 +49,9 @@ io.on('connection', (socket) => {
         }
 
         const room = rooms.get(roomId);
+
+        // Если этот userId является владельцем комнаты — восстанавливаем роль owner
+        // (обрабатывает случай перезагрузки страницы создателем)
         const isOwner = room.ownerId === userId;
         const role = isOwner ? 'owner' : 'viewer'; // по умолчанию читатель
 
@@ -185,11 +188,18 @@ io.on('connection', (socket) => {
                 }
             }
 
-            socket.to(socket.roomId).emit('room:user_left', {
-                userId: socket.userId,
-                username: socket.username
-            });
-            if (room.users.size === 0) rooms.delete(socket.roomId);
+            // Если ушёл владелец — кикаем всех и закрываем комнату
+            if (room.ownerId === socket.userId) {
+                io.to(socket.roomId).emit('room:owner_left');
+                rooms.delete(socket.roomId);
+                console.log(`Владелец покинул комнату ${socket.roomId} — комната закрыта`);
+            } else {
+                socket.to(socket.roomId).emit('room:user_left', {
+                    userId: socket.userId,
+                    username: socket.username
+                });
+                if (room.users.size === 0) rooms.delete(socket.roomId);
+            }
         }
         console.log('Клиент отключился:', socket.id);
     });
